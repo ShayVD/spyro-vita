@@ -2,8 +2,8 @@
 
 The three images here go into the VPK's `sce_sys/` as the bubble icon, the LiveArea background
 and the start gate. They're 8-bit indexed PNGs at the Vita's sizes. The build converts them with
-vita-port-kit's `livearea_png.py from` and checks them with its `check`
-(`third_party/vita-port-kit/vita/tools/`; decisions D59).
+Encore's `livearea_png.py from` and checks them with its `check`
+(`third_party/encore/targets/vita/tools/`; decisions D59).
 
 | File | Size | What it is |
 |---|---|---|

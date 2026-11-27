@@ -4,7 +4,7 @@
  * file table is the manifest.json it would write. Reads go through two
  * windows of 32 raw sectors, one fread each, so a level load or the XA
  * stream costs one file-system call per 32 sectors. The reading, sniffing,
- * directory walk and SHA-1 are vita-port-kit's discimage (D108); what stays
+ * directory walk and SHA-1 are Encore's disc image layer (enc_dimg, D108); what stays
  * here is the search of the data folder, the cue sheet, the messages and the
  * disc check.
  *
@@ -33,7 +33,7 @@
  * D132; extract_disc.py's REGIONS). */
 #define WAD_NAME "WAD.WAD"
 
-static VpkDisc s_disc; /* the image, read through two 32-sector windows; or the copy's sectors (D158) */
+static EncDimg s_disc; /* the image, read through two 32-sector windows; or the copy's sectors (D158) */
 static PsxPbp *s_pbp;  /* the digital copy (D157): the game thread's handle, s_disc's source */
 static struct {
   char path[512];
@@ -53,7 +53,7 @@ void psx_cd_set_verify(const char *marker_path, void (*progress)(int percent)) {
 static int s_scan_installed;
 void psx_cdimage_scan_installed(int on) { s_scan_installed = on != 0; }
 
-const char *psx_cdimage_path(void) { return vpk_disc_is_open(&s_disc) ? s_img.path : NULL; }
+const char *psx_cdimage_path(void) { return enc_dimg_is_open(&s_disc) ? s_img.path : NULL; }
 struct PsxPbp *psx_cdimage_pbp(void) { return s_pbp; }
 
 void psx_cdimage_layout(int *sector, int *base) {
@@ -95,19 +95,19 @@ enum { K_RAW, K_ISO, K_CHD, K_PBP, K_ECM, K_UNKNOWN, K_UNREADABLE };
 
 /* What the file is; for K_RAW also its sector size and first LBA (the first
  * sector with a sync pattern whose next sector has one too, as D58). */
-static int sniff(const char *path, VpkDiscLayout *l) {
-  switch (vpk_disc_sniff(path, l)) {
-  case VPK_DISC_RAW:
+static int sniff(const char *path, EncDimgLayout *l) {
+  switch (enc_dimg_sniff(path, l)) {
+  case ENC_DIMG_RAW:
     return K_RAW;
-  case VPK_DISC_ISO:
+  case ENC_DIMG_ISO:
     return K_ISO;
-  case VPK_DISC_CHD:
+  case ENC_DIMG_CHD:
     return K_CHD;
-  case VPK_DISC_PBP:
+  case ENC_DIMG_PBP:
     return K_PBP;
-  case VPK_DISC_ECM:
+  case ENC_DIMG_ECM:
     return K_ECM;
-  case VPK_DISC_UNREADABLE:
+  case ENC_DIMG_UNREADABLE:
     return K_UNREADABLE;
   }
   return K_UNKNOWN;
@@ -182,12 +182,12 @@ static int resolve_cue(const char *dir, const char *cue, char **names, int nname
               "%s names %s, which isn't in %s/. Copy both files.", cue, base, dir);
 }
 
-static int open_image(const char *path, const char *name, const VpkDiscLayout *l,
+static int open_image(const char *path, const char *name, const EncDimgLayout *l,
                       PsxCdError *err) {
   int r;
   s_disc.now = psx_cd_now;
   s_disc.io = psx_cd_io_add;
-  r = vpk_disc_open(&s_disc, path, l, 1);
+  r = enc_dimg_open(&s_disc, path, l, 1);
   if (r == -1)
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE IMAGE", "%s can't be opened.", name);
   if (r != 0)
@@ -247,7 +247,7 @@ static int open_pbp(const char *path, const char *name, PsxCdError *err) {
   /* the copy's sectors as the disc: the kit's reads, find and walk serve it as an image (D158) */
   s_disc.now = psx_cd_now;
   s_disc.io = NULL; /* its reads are the decoder's, counted by psx_pbp_stats */
-  if (vpk_disc_open_source(&s_disc, psx_pbp_source, p, psx_pbp_sectors(p)) != 0) {
+  if (enc_dimg_open_source(&s_disc, psx_pbp_source, p, psx_pbp_sectors(p)) != 0) {
     psx_pbp_close(p);
     return fail(err, PSX_CD_ERR_BAD_IMAGE, "CAN'T READ THE DIGITAL COPY", "%s: out of memory", name);
   }
@@ -342,7 +342,7 @@ static int find_image(const char *dir, PsxCdError *err) {
   static const char *const exts[] = {".cue", ".bin", ".img", ".iso", ".chd", ".pbp", ".ecm"};
   char *names[MAX_NAMES], path[512], msg[700];
   int nnames = 0, i, pass, found = -1;
-  VpkDiscLayout lay = {0, 0, 0};
+  EncDimgLayout lay = {0, 0, 0};
   PsxCdError first = {0};
   DIR *d = opendir(dir);
   struct dirent *e;
@@ -476,7 +476,7 @@ out:
 /* ---- reading ---- */
 
 int psx_cdimage_read(int lba, int off, void *buf, int n) {
-  return vpk_disc_read_raw(&s_disc, lba, off, buf, n);
+  return enc_dimg_read_raw(&s_disc, lba, off, buf, n);
 }
 
 void psx_cdimage_close(void) {
@@ -484,7 +484,7 @@ void psx_cdimage_close(void) {
     psx_cdn_quiesce();
     psx_cdn_pbp_drop();
   }
-  vpk_disc_close(&s_disc);
+  enc_dimg_close(&s_disc);
   psx_pbp_close(s_pbp);
   s_pbp = NULL;
   memset(&s_img, 0, sizeof s_img);
@@ -514,7 +514,7 @@ static int read_form1(int lba, int count, unsigned char *out) {
     }
     return 0;
   }
-  return vpk_disc_read(&s_disc, lba, count, out);
+  return enc_dimg_read(&s_disc, lba, count, out);
 }
 
 /* ---- the ISO9660 directory, as extract_disc.py walks it ---- */
@@ -535,8 +535,8 @@ static int add(Table *t, const PsxCdImageFile *f) {
   return 0;
 }
 
-/* One file of the kit's walk (vpk_disc_walk: depth first, directory order). */
-static int add_file(void *user, const VpkDiscEntry *e) {
+/* One file of the kit's walk (enc_dimg_walk: depth first, directory order). */
+static int add_file(void *user, const EncDimgEntry *e) {
   Table *t = user;
   PsxCdImageFile f;
   if (e->xa_attr & XA_CDDA)
@@ -745,7 +745,7 @@ int psx_cdimage_open(const char *dir, PsxCdImageFile **files, int *nfiles, PsxCd
     goto bad;
   }
   {
-    int r = vpk_disc_walk(&s_disc, add_file, &t); /* the image's, or the copy's through its source */
+    int r = enc_dimg_walk(&s_disc, add_file, &t); /* the image's, or the copy's through its source */
     t.bad_lba = s_disc.bad_lba;
     if (r != 0 || t.n == 0) {
       if (t.bad_lba - s_disc.l.base >= s_disc.nsect) {
