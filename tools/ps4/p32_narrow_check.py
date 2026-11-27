@@ -3,7 +3,7 @@
 64-bit integer becomes a 32-bit one, in the units of a build of the offset
 model (linuxa64 or macos, configured with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON).
 
-    p32_narrow_check.py BUILD [--all] [--grep TEXT]
+    p32_narrow_check.py BUILD [--all] [--widen | --raw]
 
 O3's cast pass (p32_offset_rewrite.py --casts) found every cast between a
 pointer and a 32-bit integer. A host address can also reach a 32-bit word
@@ -17,6 +17,14 @@ operand is a 32-bit value widened (`(u32)(uintptr_t)P32_ENC(p)`) and those
 in the build's own generated or third-party files. A listed site is either
 right (an integer, a size, a difference of two addresses) or a missed
 P32_ENC: read each one. --all lists the decomp's units too.
+
+--widen lists the other way: a 32-bit value cast to a 64-bit integer that
+is then used as an address. --raw (#281) lists a 32-bit word read through a
+pointer cast (`*(u32 *)p`, `*(int *)&slot`) and widened to a 64-bit integer,
+explicitly or not: an initialiser, an assignment, a call's uintptr_t
+argument. If the word is a P32 slot, the offset model's value is its offset
+from spyro_p32_base, not an address, and the read wants P32_DEC (render_hand.h
+HAND_CX handed the vertex cache D_800757B0's offset as the renderer's range).
 """
 import argparse
 import json
@@ -30,11 +38,36 @@ from concurrent.futures import ThreadPoolExecutor
 WIDE = {"unsigned long", "long"}  # uintptr_t, intptr_t, size_t on LP64 (uint64_t is long long on macOS)
 NARROW = {"unsigned int", "int", "unsigned short", "short", "unsigned char", "char", "signed char"}
 WIDEN = [False]
+RAW = [False]
 LEAVES = ("DeclRefExpr", "MemberExpr", "CallExpr", "ArraySubscriptExpr")
 
 
 def desugar(t):
     return (t or {}).get("desugaredQualType") or (t or {}).get("qualType", "")
+
+
+def strip(n):
+    """through parentheses and the value casts that keep it (an lvalue's load)"""
+    while n.get("kind") == "ParenExpr" or (n.get("kind") == "ImplicitCastExpr" and
+                                          n.get("castKind") in ("LValueToRValue", "NoOp")):
+        n = (n.get("inner") or [{}])[0]
+    return n
+
+
+def raw_read(n):
+    """a word read through a cast pointer: `*(u32 *)p`, `((int *)p)[i]`"""
+    n = strip(n)
+    k = n.get("kind")
+    if k == "UnaryOperator" and n.get("opcode") == "*":
+        base = strip((n.get("inner") or [{}])[0])
+    elif k == "ArraySubscriptExpr":
+        base = strip((n.get("inner") or [{}])[0])
+        if base.get("kind") == "ImplicitCastExpr":  # an array's decay
+            return False
+    else:
+        return False
+    # (the word's own type, 32 bits, the caller tests: `u32 *` has no desugared name)
+    return base.get("kind") == "CStyleCastExpr" and desugar(base.get("type")).endswith("*")
 
 
 def addr_like(n):
@@ -129,7 +162,14 @@ def scan(node, root, out, locs, inside=False, parent=None):
         widening = WIDEN[0] and node["kind"] == "CStyleCastExpr" and \
             desugar(inner.get("type")) in ("unsigned int", "int") and desugar(node.get("type")) in WIDE and \
             address_use(parent, node)
-        if (widening and not inside if WIDEN[0] else narrowing) \
+        # --raw: a word read through a cast pointer made a 64-bit integer (#281)
+        raw = RAW[0] and not inside and desugar(inner.get("type")) in ("unsigned int", "int") and \
+            desugar(node.get("type")) in WIDE and raw_read(inner)
+        hit = raw if RAW[0] else (widening and not inside if WIDEN[0] else narrowing)
+        # (a raw read in a macro by the macro's line: render_hand.h's, once)
+        if raw and sfile.startswith(root + "/src/"):
+            efile, eline = begin[0]
+        if hit \
                 and not sfile.endswith("/src/compat/p32.h") and efile.startswith(root) \
                 and "/build/" not in efile and "/third_party/" not in efile:
             out.add((os.path.relpath(efile, root), eline, node["kind"][:5], desugar(inner.get("type")),
@@ -169,8 +209,11 @@ def main():
     ap.add_argument("--widen", action="store_true",
                     help="list the casts of a 32-bit value to a 64-bit integer instead")
     ap.add_argument("-j", type=int, default=os.cpu_count())
+    ap.add_argument("--raw", action="store_true",
+                    help="list the 32-bit words read through a cast pointer and widened to 64 bits instead")
     a = ap.parse_args()
     WIDEN[0] = a.widen
+    RAW[0] = a.raw
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     cc = json.load(open(os.path.join(a.build, "compile_commands.json")))
     cc = [e for e in cc if e["file"].endswith(".c") and (a.all or e["file"].startswith(root + "/src/"))]
