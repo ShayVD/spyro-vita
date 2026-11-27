@@ -11,18 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 296,
-      "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
-      "started_at": "2026-11-27T05:04:36Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h"
-      ],
-      "agent": "afde2755bd6a5d91f",
-      "reported": true
-    },
-    {
       "issue": 283,
       "branch": "refactor/283-vita-on-encore-s-platform-interface",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
@@ -633,3 +621,4 @@ continue.
 - 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
 - 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
 - 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
+- 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
