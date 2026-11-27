@@ -58,7 +58,7 @@ jobs:
         run: tools/ci/build_vpk.sh build/vita
       - name: The VPK is a safe app
         run: |
-          python3 third_party/vita-port-kit/vita/tools/vpk_pack.py show build/vita/spyro-vita.vpk \
+          python3 third_party/encore/targets/vita/tools/vpk_pack.py show build/vita/spyro-vita.vpk \
             | grep '^eboot safe '
       - uses: actions/upload-artifact@v7
         with:
@@ -97,7 +97,7 @@ jobs:
         run: tools/ci/build_vpk.sh build/vita-unsafe
       - name: The VPK is an unsafe app, under its own file name
         run: |
-          python3 third_party/vita-port-kit/vita/tools/vpk_pack.py show build/vita-unsafe/spyro-vita.vpk \
+          python3 third_party/encore/targets/vita/tools/vpk_pack.py show build/vita-unsafe/spyro-vita.vpk \
             | grep '^eboot unsafe '
           mv build/vita-unsafe/spyro-vita.vpk build/vita-unsafe/spyro-vita-unsafe.vpk
       - uses: actions/upload-artifact@v7
