@@ -2419,5 +2419,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - **Toasty**, real time, one run each (no spread): 8.78 late vblanks per 300 with mode 1 against 5.89 with mode 7 over frames 10800-13200. In Artisans (frames 12000-12600) the draw distance stays at x1.00 with mode 1 and reaches x1.5 with mode 7.
 - **Decision:** the hardware shows a gain past the spread for every mode, and mode 7 is the largest. It is short of the ~0.9 ms Artisans needs for 2x on its own, so the rest is #272 (projections on core 2). Moving the default from 1 to 7 is the owner's call (D278); until then it stays 1, and `vc_fast_rec=7` in `config.txt` turns it on.
 
+### D281. The Vita's `vc_fast_rec` defaults to 7 (#259, 2026-11-27)
+
+- **Context:** with D280's hardware A/B in hand, the owner said "Yes, default to 7". Mode 7 is D278's lean and ahead record together, and took 0.62 ms off Artisans' game thread.
+- **Decision:** in `src/platform/vita/main.c`, `s_vc_fast_rec` starts at 7. `vc_fast_rec=1` in `config.txt` gives back D261's record and the game thread's cost-model counts (`vc.div`, `vc.probe`, `vc.lines`, which read 0 under 7).
+  - Host builds keep `vcache.c`'s default of 1, and `VC_FAST_REC` still picks a mode there. The PC builds were not measured.
+  - The pictures are the same. In D278, Vita3K's shots with 7 were identical to the base on owner60, stone60 and toasty60, and host FNV per polygon `--strict` was identical with 7.
+- **Checked:** the Vita build on the branch exits 0, and `tools/check_no_assets.sh` passes. No new hardware or Vita3K run: the build is D280's VPK with this default, and the session ran mode 7 on it.
+- **Next:** #259 (2x in Artisans at 60 Hz) stays open. The remaining ~0.3 ms is #272's work.
+
 - **Next free number:** take one with `autopilot.py claim-decision`.
 

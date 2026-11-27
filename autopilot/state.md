@@ -629,3 +629,4 @@ continue.
 - 2026-11-27T10:05Z stop on the owner's plan: #283 (D277) and #259 (D278) merged; retro 8c is Encore draft PR #151; release PR #298 to main (host ctest 38/38 on 266a2b0). Loop stopped; resume with #284-#288, #295, #297, #272, #247, #225, #219 and the two hardware A/Bs (#259, #271).
 - 2026-11-27T14:51Z hw: the owner said "Yes, run #259"; running runs/vita/issue-259-2/hw/hw-session-259-2.sh as prepared (VPK 9c6d2d063045, 10 runs, ~1 h); hw_check ready.
 - 2026-11-27T15:29Z hw: #259 A/B done (10 runs, all at frames=). Artisans 6600-7800 game ms: 1 12.33/12.33, 3 11.85, 5 12.06, 7 11.71 (-0.62); Toasty real time late/300 8.78 (1) vs 5.89 (7). D280; candidate gain; default change asked of the owner; hardware_pending cleared.
+- 2026-11-27T15:40Z owner: "Yes, default to 7"; merged perf/259-vc-fast-rec-default-7 (D281: the Vita's vc_fast_rec defaults to 7; host keeps 1). Vita build 0, noassets 0. #259 stays open for #272.
