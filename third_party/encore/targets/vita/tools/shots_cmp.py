@@ -7,6 +7,10 @@ edges (targets/vita/docs/gotchas.md 7): give --edge, and set --max-diff from two
 RGBA PNGs, not interlaced (what Vita3K captures and the ports' shots write). Standard library only.
 Exit 0 when every BASE picture passes; 1 otherwise (a picture over the limit, a size change, a missing picture,
 a picture that cannot be decoded, an edge that leaves no pixels, or no BASE picture matching the glob).
+  shots_cmp.py --one-colour R,G,B PNG [--tol 0]
+Exit 0 when every pixel of PNG is R,G,B (each channel within TOL); 1 otherwise or when it cannot be decoded.
+v3k_run.sh CAPTURE=1 uses it to tell a one-colour window grab that is the game's frame (a black fade, as its VRAM
+shot) from one that is not.
 """
 import argparse
 import fnmatch
@@ -89,7 +93,37 @@ def sha1(path):
         return hashlib.sha1(fh.read()).hexdigest()
 
 
+def one_colour(argv):
+    ap = argparse.ArgumentParser(prog="shots_cmp.py --one-colour")
+    ap.add_argument("--one-colour", required=True)
+    ap.add_argument("png")
+    ap.add_argument("--tol", type=int, default=0)
+    a = ap.parse_args(argv)
+    try:
+        want = [int(x) for x in a.one_colour.split(",")]
+        if len(want) != 3:
+            raise ValueError
+    except ValueError:
+        ap.error("--one-colour takes R,G,B")
+    try:
+        w, h, bpp, rows = read_png(a.png)
+    except (OSError, ValueError, zlib.error, struct.error, IndexError) as e:
+        print(f"bad {a.png}: {e}")
+        return 1
+    for y, row in enumerate(rows):
+        for x in range(w):
+            p = row[x * bpp:x * bpp + 3]
+            if any(abs(p[k] - want[k]) > a.tol for k in range(3)):
+                print(f"not one colour: ({x},{y}) is {tuple(p)}, not {tuple(want)}")
+                return 1
+    print(f"one colour {tuple(want)}: {w}x{h}")
+    return 0
+
+
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if "--one-colour" in argv:
+        return one_colour(argv)
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("base")
     ap.add_argument("new")

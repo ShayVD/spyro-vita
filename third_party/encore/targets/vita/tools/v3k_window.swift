@@ -1,10 +1,14 @@
-// From spyro-vita tools/vita/vita3k_window.swift @ bb62f38, unchanged; used by v3k_run.sh CAPTURE=1.
+// From spyro-vita tools/vita/vita3k_window.swift @ bb62f38; used by v3k_run.sh CAPTURE=1. Encore's change: a
+// one-colour grab prints its colour (below), so v3k_run.sh can tell a real one-colour frame from a failed grab.
 // Captures Vita3K's game window (the largest window Vita3K owns) for
 // tools/vita/vita3k_run.sh CAPTURE=1:
 //   vita3k_window OUT.png [PID]   the window's content, title bar cut off;
 //   with PID, only that Vita3K's windows (another project's Vita3K may be open)
 // Exit 0: written; 1: no Vita3K window; 2: the grab was blank (one colour:
-// the window wasn't being drawn, e.g. covered or on another Space).
+// the window wasn't being drawn, e.g. covered or on another Space, or the
+// game really showed one colour, e.g. a black fade). With 2 it prints
+// "one-colour R G B A" on stdout: the mean of the sampled pixels, A the
+// lowest alpha sampled.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -49,13 +53,16 @@ for y in 0..<(h / 10) where stride(from: 0, to: w, by: 7).allSatisfy({ dark($0, 
   top = y
   break
 }
-var lo = 255, hi = 0
+var lo = 255, hi = 0, sum = [0, 0, 0], n = 0, alpha = 255
 for y in stride(from: top, to: h, by: 5) {
   for x in stride(from: 0, to: w, by: 5) {
     let p = px + (y * w + x) * 4
     let v = (Int(p[0]) + Int(p[1]) + Int(p[2])) / 3
     lo = min(lo, v)
     hi = max(hi, v)
+    for k in 0..<3 { sum[k] += Int(p[k]) }
+    alpha = min(alpha, Int(p[3]))
+    n += 1
   }
 }
 let body = shot.cropping(to: CGRect(x: 0, y: top, width: w, height: h - top))!
@@ -64,4 +71,9 @@ guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identi
 else { fail("can't write \(url.path)") }
 CGImageDestinationAddImage(dest, body, nil)
 CGImageDestinationFinalize(dest)
-exit(hi - lo < 4 ? 2 : 0)
+if hi - lo < 4 {
+  let m = sum.map { n > 0 ? ($0 + n / 2) / n : 0 }
+  print("one-colour \(m[0]) \(m[1]) \(m[2]) \(alpha)")
+  exit(2)
+}
+exit(0)

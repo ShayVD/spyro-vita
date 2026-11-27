@@ -48,10 +48,48 @@ case $mode in
   crash) echo "PC: 0x81001234,   SP: 0x7f000000,   LR: 0x81000ff0"; exit 139 ;;
   hang) exec sleep 1000 ;;
   hangre) echo "watchdog: hang at 99" >> "$FAKE_DATA/mock.log"; exec sleep 1000 ;;
+  capture) # the shot_hold protocol: a VRAM shot of vblank V, then hold.req V until hold.ack
+           mkdir -p "$FAKE_DATA/shots"
+           for v in 200 400 600 800 1000; do
+             case $v in 400) c=multi ;; 600) c=none ;; *) c=0,0,0 ;; esac
+             [ $c = none ] || python3 "$FAKE_PNG" "$FAKE_DATA/shots/v$(printf %06d $v).png" $c
+             echo $v > "$FAKE_DATA/hold.req"
+             for _ in $(seq 1 100); do [ -e "$FAKE_DATA/hold.ack" ] && break; sleep 0.1; done
+             rm -f "$FAKE_DATA/hold.ack"
+           done
+           echo "frames=10 reached" >> "$FAKE_DATA/mock.log"; exit 0 ;;
+  failre) echo "route: goal missed at 42" >> "$FAKE_DATA/mock.log"; exec sleep 1000 ;;
+  failexit) echo "route: goal missed at 42" >> "$FAKE_DATA/mock.log"; exit 0 ;;
+  failstop) echo "route: goal missed at 42" >> "$FAKE_DATA/mock.log"; echo "frames=10 reached" >> "$FAKE_DATA/mock.log"; exit 0 ;;
 esac
 EOF
 chmod +x "$w/vita3k"
+cat > "$w/png.py" <<'EOF2'
+# png.py OUT R,G,B | multi: a small 8-bit RGB PNG, one colour or not
+import struct, sys, zlib
+out, c = sys.argv[1], sys.argv[2]
+w, h = 8, 4
+px = [(0, 0, 0)] * (w * h) if c == "multi" else [tuple(int(x) for x in c.split(","))] * (w * h)
+if c == "multi":
+    px[5] = (200, 10, 10)
+raw = b"".join(b"\0" + b"".join(bytes(p) for p in px[y * w:(y + 1) * w]) for y in range(h))
+chunk = lambda k, d: struct.pack(">I", len(d)) + k + d + struct.pack(">I", zlib.crc32(k + d))
+open(out, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                      + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+EOF2
+cat > "$w/grab" <<'EOF2'
+#!/usr/bin/env bash
+# fake v3k_window: OUT.png PID; what it sees depends on the vblank in OUT's name
+echo grab >> "$1.tries"
+case $(basename "$1") in
+  win-200.png|win-400.png|win-600.png) echo png > "$1"; echo "one-colour 0 0 0 255"; exit 2 ;; # a black window
+  win-800.png) echo png > "$1"; echo "one-colour 0 0 0 0"; exit 2 ;;  # black, but transparent: not drawn
+  win-1000.png) echo "no Vita3K window" >&2; exit 1 ;;
+esac
+EOF2
+chmod +x "$w/grab"
 export HW_GAME="$w/game/hw.game" GAME_ROOT="$w/game" V3K_FS="$w/fs" VITA3K="$w/vita3k" FAKE_DATA="$data" V3K_POLL=1 \
+  FAKE_PNG="$w/png.py" \
   V3K_CONFIG="$w/no-config.yml" # never the user's own Vita3K config
 mkdir -p "$data"
 
@@ -90,6 +128,24 @@ check "hang: Vita3K stopped" 'gone'
 rm -f "$w/fs/ux0/data/fake.pid"
 check "hang line: exit 4" '[ "$(run "$w/o4" 30 mock=hangre)" = 4 ]'
 check "hang line: Vita3K stopped" 'gone'
+# HW_FAIL_RE: the route's goal was missed; the run stops at once with exit 7 (without it: as before)
+{ cat "$w/game/hw.game"; echo "HW_FAIL_RE='goal missed'"; } > "$w/game/fail.game"
+rm -f "$w/fs/ux0/data/fake.pid"
+start=$(date +%s)
+check "fail line: exit 7 at once, Vita3K stopped" '[ "$(HW_GAME="$w/game/fail.game" run "$w/f1" 60 mock=failre)" = 7 ] && [ $(($(date +%s) - start)) -lt 20 ] && gone'
+check "fail line: result and the line recorded" 'grep -q "^result=fail_line$" "$w/f1/v3k-run.txt" && grep -q "^fail_line=route: goal missed at 42$" "$w/f1/v3k-run.txt" && grep -q "the fail line (HW_FAIL_RE): route: goal missed at 42" "$w/out.txt"'
+check "fail line, then Vita3K ends: 7, not a crash" '[ "$(HW_GAME="$w/game/fail.game" run "$w/f2" 30 mock=failexit)" = 7 ]'
+check "fail line and stop line together: the fail line wins" '[ "$(HW_GAME="$w/game/fail.game" run "$w/f3" 30 mock=failstop)" = 7 ]'
+check "no HW_FAIL_RE: the same lines are a crash (2), as before" '[ "$(run "$w/f4" 30 mock=failexit)" = 2 ] && ! grep -q fail_line "$w/f4/v3k-run.txt"'
+check "no HW_FAIL_RE: the stop line after them passes, as before" '[ "$(run "$w/f5" 30 mock=failstop)" = 0 ]'
+# CAPTURE=1: a one-colour grab is a capture only when the game's VRAM shot of that vblank is that colour
+check "CAPTURE=1: the run passes, shot_hold set, every hold answered" '[ "$(CAPTURE=1 V3K_WINDOW="$w/grab" run "$w/c1" 60 mock=capture)" = 0 ] && grep -q "^shot_hold=20000$" "$w/c1/config.txt" && [ -f "$w/c1/win-200.png" ]'
+check "CAPTURE=1: a black grab of a black VRAM shot is a single-colour capture" 'grep -q "^shot 200: single-colour capture (0,0,0, as the VRAM shot v000200.png)$" "$w/c1/capture.log" && ! grep -q "^shot 200: no capture" "$w/c1/capture.log"'
+check "CAPTURE=1: a black grab of a VRAM shot that is not one colour stays no capture (2)" 'grep -q "^shot 400: no capture (2): one colour (0,0,0), but the VRAM shot v000400.png is not$" "$w/c1/capture.log"'
+check "CAPTURE=1: a black grab with no VRAM shot stays no capture (2)" 'grep -q "^shot 600: no capture (2): one colour (0,0,0) and no VRAM shot of 600 to compare$" "$w/c1/capture.log"'
+check "CAPTURE=1: a transparent black grab stays no capture (2)" 'grep -q "^shot 800: no capture (2): a transparent grab" "$w/c1/capture.log"'
+check "CAPTURE=1: no window stays no capture (1)" 'grep -q "^shot 1000: no capture (1)$" "$w/c1/capture.log"'
+check "CAPTURE=1: a blank or failed grab is tried a second time" '[ "$(wc -l < "$w/c1/win-1000.png.tries")" -eq 2 ] && [ "$(wc -l < "$w/c1/win-200.png.tries")" -eq 2 ]'
 check "REALTIME=1: no realtime=0" '[ "$(REALTIME=1 run "$w/o5" 30 mock=stop)" = 0 ] && ! grep -q realtime "$w/o5/config.txt"'
 check "the lock is released" '[ ! -d "$data.lock" ]'
 "$tools/v3k_run.sh" "$w/o6" 6 mock=hang > /dev/null 2>&1 &
@@ -170,6 +226,8 @@ check "ap_gate run: the slide from Vita3K's segment line" '[ "$(FAKE_SLIDE=0x820
 check "ap_gate run: no HW_ELF prints the dumps unnamed" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/e3" 30 mock=invalid)" = 6 ] && grep -q "CPU dumps, unnamed (set HW_ELF" "$w/out.txt" && grep -q "^  PC: 0x810001de," "$w/out.txt" && [ ! -f "$w/e3/where.txt" ]'
 check "ap_gate run: ARTIFACT= ignores the game file's HW_ELF" '[ "$(ARTIFACT="$w/other.vpk" AP_GATE_NM="$w/fake-nm" gate run --target vita --game "$w/game/elf.game" "$w/e4" 30 mock=invalid)" = 6 ] && grep -q "unnamed (ARTIFACT= runs another build" "$w/out.txt"'
 check "ap_gate run: a missing ELF is said" '{ cat "$w/game/hw.game"; echo "HW_ELF=build/none.elf"; } > "$w/game/noelf.game"; [ "$(gate run --target vita --game "$w/game/noelf.game" "$w/e5" 30 mock=invalid)" = 6 ] && grep -q "unnamed (no ELF at .*build/none.elf (HW_ELF))" "$w/out.txt"'
+check "ap_gate run: the fail line is 7, recorded in run.txt" '[ "$(gate run --target vita --game "$w/game/fail.game" "$w/a7" 30 mock=failre)" = 7 ] && grep -q "^result=fail_line$" "$w/a7/run.txt" && grep -q "^fail_line=route: goal missed at 42$" "$w/a7/run.txt" && grep -q "goal missed" "$w/a7/run.log"'
+check "ap_gate run: no HW_FAIL_RE, a missed goal then an exit is 2 as before" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/a8" 30 mock=failexit)" = 2 ]'
 check "ap_gate run: a crash is 2" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/a3" 30 mock=crash)" = 2 ] && grep -q "^invalid_accesses=0$" "$w/a3/run.txt" && grep -q "^  PC: 0x81001234," "$w/out.txt"'
 "$tools/v3k_run.sh" "$w/a4" 6 mock=hang > /dev/null 2>&1 &
 holder=$!

@@ -14,10 +14,16 @@
  * LP64_LOW_TRAP=0 in the environment skips the reservation (a driver that insists on memory below 4 GB: the game
  * still runs, without the trap). LP64_LOW_IMAGE_MUTANT=1 (tests only) skips it too.
  *
- * x86-64 Linux only (/proc/self/maps, MAP_FIXED_NOREPLACE). From spyro-vita src/platform/pc/low_linux.c (MIT; its
- * D240), with the kit's split of a misplaced reservation (lp64_low_image.c). */
-#if !defined(__x86_64__) || !defined(__linux__)
-#error "lp64_low_image_dyn.c is for x86-64 Linux"
+ * aarch64 Linux too, for the offset model's dynamic executable (lp64/docs/low-image.md, "The offset model"): there the
+ * image lies above 4 GB (lp64/cmake/linuxa64.toolchain.cmake's link), lp64_is_low means nothing and
+ * lp64_p32_image_start is the check, but the reservation is the same trap for a pointer cut to 32 bits instead of
+ * encoded. A kernel's page there may be 4, 16 or 64 KB: the reservation takes getpagesize()'s.
+ *
+ * Linux only (/proc/self/maps, MAP_FIXED_NOREPLACE). From spyro-vita src/platform/pc/low_linux.c (MIT; its D240), with
+ * the kit's split of a misplaced reservation (lp64_low_image.c); aarch64 from its src/platform/pc/low.c @ 36d9e07
+ * (D266). */
+#if !(defined(__x86_64__) || defined(__aarch64__)) || !defined(__linux__)
+#error "lp64_low_image_dyn.c is for x86-64 or aarch64 Linux"
 #endif
 #define _GNU_SOURCE 1
 #include "lp64_low_image.h"
@@ -35,6 +41,7 @@
 
 static int s_reserved_pages;
 static int s_budget = 4096;
+static uint64_t s_page = 4096; /* the kernel's page (getpagesize(); 16 or 64 KB on some aarch64 kernels) */
 static char s_maps[65536];
 
 int lp64_is_low(const void *p, size_t n) { return (uintptr_t)p + n <= LP64_LOW_LIMIT; }
@@ -48,13 +55,13 @@ static void reserve(uint64_t start, uint64_t end) {
   p = mmap((void *)(uintptr_t)start, end - start, PROT_NONE,
            MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
   if (p == (void *)(uintptr_t)start) {
-    s_reserved_pages += (int)((end - start) >> 12);
+    s_reserved_pages += (int)((end - start) / s_page);
     return;
   }
   if (p != MAP_FAILED) munmap(p, end - start);
-  if (end - start <= 4096) return;
+  if (end - start <= s_page) return;
   {
-    uint64_t mid = start + (((end - start) / 2) & ~4095ull);
+    uint64_t mid = start + (((end - start) / 2) & ~(s_page - 1));
     reserve(start, mid);
     reserve(mid, end);
   }
@@ -62,14 +69,15 @@ static void reserve(uint64_t start, uint64_t end) {
 
 /* every gap below 4 GB in /proc/self/maps (read without stdio or malloc: nothing of libc's is set up yet) */
 static void low_trap(int argc, char **argv, char **envp) {
-  uint64_t prev = 0x10000; /* vm.mmap_min_addr */
-  uint64_t lo[512], hi[512];
+  uint64_t prev, lo[512], hi[512];
   int n = 0, fd, len = 0, r, i;
   char *l;
   (void)argc;
   (void)argv;
   for (char **e = envp; e && *e; e++)
     if (!strcmp(*e, "LP64_LOW_TRAP=0") || !strcmp(*e, "LP64_LOW_IMAGE_MUTANT=1")) return;
+  s_page = (uint64_t)getpagesize();
+  prev = (0x10000 + s_page - 1) & ~(s_page - 1); /* vm.mmap_min_addr, rounded to a page */
   if ((fd = open("/proc/self/maps", O_RDONLY)) < 0) return;
   while (len < (int)sizeof s_maps - 1 && (r = (int)read(fd, s_maps + len, sizeof s_maps - 1 - len)) > 0) len += r;
   close(fd);

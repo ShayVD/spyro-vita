@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Run a command inside the encore-pc container (targets/pc/docker/pc.Dockerfile, an
+# amd64 image) with the repo mounted at /work and the same relative working
+# directory. A disc/ symlink (a game repo's data) is mounted too, read-only.
+# From spyro-vita's tools/pc/tc.
+#   targets/pc/tools/tc targets/pc/test/desktop_runtime_tests.sh
+# On an Apple Silicon Mac, run it against a Docker VM with Rosetta for amd64
+# (colima start --vm-type vz --vz-rosetta): DOCKER_HOST picks it.
+# ENC_X=1 runs the command under a virtual X display (Xvfb, Mesa's llvmpipe
+# for GL): targets/pc/tools/xrun.sh.
+set -euo pipefail
+root=$(cd "$(dirname "$0")/../../.." && pwd)
+rel=${PWD#"$root"}
+[[ "$rel" == "$PWD" ]] && rel=""
+mounts=(-v "$root:/work")
+if [ -L "$root/disc" ]; then
+  mounts+=(-v "$(cd "$root/disc" && pwd -P):/work/disc:ro")
+fi
+tty=()
+[ -t 0 ] && [ -t 1 ] && tty=(-it)
+pre=()
+if [ -n "${ENC_X:-}" ]; then
+  pre=(/work/targets/pc/tools/xrun.sh)
+fi
+exec docker run --rm ${tty[@]+"${tty[@]}"} --platform linux/amd64 \
+  -e HOME=/work/build/pc-home \
+  "${mounts[@]}" -w "/work$rel" encore-pc ${pre[@]+"${pre[@]}"} "$@"

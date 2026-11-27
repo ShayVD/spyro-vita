@@ -9,6 +9,9 @@ HW_LOG=mygame.log
 HW_STOP_RE='frames=[0-9]+ reached'
 # optional: a line meaning the app hung and stops itself for a crash dump
 HW_HANG_RE=
+# optional, Vita3K runs (v3k_run.sh, ap_gate): a line the app writes when the route's goal was missed (an extended
+# regex); the run stops at once and exits 7 instead of running on to a timeout or an exit read as a crash
+HW_FAIL_RE=
 # the VPK, relative to the game repo's root (VPK= overrides)
 HW_VPK=build/vita/mygame.vpk
 # the default timeout (s); no FTP for HW_QUIET_S after the launch, then a look every HW_POLL_S

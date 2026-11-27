@@ -2365,4 +2365,40 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Checked:** Vita build exit 0 (`.text` +8 KB, `.bss` +85 KB for the backend's state); 8 Vita3K routes identical to base-e603aaa (685 shots, 0 invalid accesses); presenter lines the same apart from timing-dependent join waits; only timing counters move; host ctest 38/38; macOS native and noassets pass; gate PASS and a Vita build on the merged branch (`runs/vita/issue-283-1/`).
 - **Not checked:** hardware pacing and the extra threads on a real Vita.
 
+### D279. The offset model comes from Encore: spyro switches to its copy of `lp64_p32.h`, `p32_image`, the aarch64 reservation, the Mach-O tools and four toolchains, with no other change (2026-11-27)
+- **Why:** Encore PR #148 (merged at d265f96) moved O1–O5 and #281 into the kit, game-free: D249, D250, D258, D262, D265, D266, D267, taken from develop at 36d9e07. This is the second half of Encore's `extract-to-kit`: the game uses the kit's copy, and behaviour stays the same.
+- **Vendored:** `third_party/encore` refreshed from 098d34b to d265f96 with Encore's `tools/vendor.sh`. It adds `lp64/runtime/p32`, `lp64/runtime/p32_image`, `lp64/tools`, `lp64/cmake`, `targets/pc/cmake`, `targets/pc/macos` and `targets/pc/tools` to the 11 paths already there. Of those 11, only `lp64/runtime/low_image` (`lp64_low_image_dyn.c` takes aarch64 now) and `targets/vita/tools` changed.
+- **What moved** (call sites unchanged; spyro's old names map onto the kit's):
+  - `src/compat/p32.h` is a compat header over `lp64_p32.h`. `SPYRO_P32_OFFSET`, `SPYRO_P32_CHECK`, `SPYRO_P32`, `spyro_p32_base` and `SPYRO_ASM_LIT` map to `LP64_P32_OFFSET`, `LP64_P32_CHECK`, `LP64_P32_ON`, `lp64_p32_base` and `LP64_ASM_LIT`. The accessors keep their names; Windows still gets `pc_win.h`. CMakeLists' two `--defsym`s name `lp64_p32_base`.
+  - `src/platform/common/p32_image.c` builds Encore's `lp64_p32_image.c` where spyro's own copy sat in the link, plus the Mach-O `etext`/`_edata`/`_end` marks, which stay the game's. `p32_image.h` maps `p32_image_start(why, n)` to `lp64_p32_image_start(s1_pie_words, why, n)`.
+  - The PC on aarch64 Linux links Encore's `lp64_low_image_dyn.c` instead of `low.c`'s own reservation; `low.c` keeps only the report.
+  - `cmake/{macos,linuxa64,pc-macos,pc-linux-arm64}.toolchain.cmake` are wrappers that set `LP64_P32_H` empty (spyro forces its own header) and include the kit's. `SPYRO_CLANG` and `SPYRO_SDL3_PREFIX` map to `LP64_CLANG` and `ENC_SDL3_PREFIX`; `SPYRO_PC_TARGET` comes from `ENC_PC_TARGET`. The game's own flags stay in CMakeLists.txt.
+  - `data2s.py --macho` calls Encore's `asm_macho.convert`; its own `macho()` is gone.
+  - `tools/macho_syms.py` (the kit's is the same code), `tools/pc/sdl3_macos.sh` and `src/platform/pc/Info.plist.in` are gone; the build uses the kit's copies.
+- **Kept, with the reasons:**
+  - `tools/ps4/p32_offset_rewrite.py`, `p32_offset_check.py`, `p32_decl_check.py` and `p32_narrow_check.py` stay, because the kit's copies don't yet give the same answers:
+    - The kit's rewriter, rerun on the pre-O2 tree (d3e5890's parent, linux64), writes the decomp patches byte for byte as spyro's does. But it leaves 17 stores in the port's sources unwrapped: a value ending in a macro (`x = NULL`; one `?:` ending in `NULL`). It lists them as "part of a macro" (4,567 sites against 4,584). It wrapped nothing that spyro's missed: no slot behind a typedef was missed.
+    - The kit's `p32_decl_check.py` crashes on spyro's build. The `--skip` list is overwritten by the argument-skip counter in `all_units`. With that renamed, it lists the same 11 functions as spyro's.
+    - Both are Encore bugs, for an Encore PR.
+  - spyro's own `p32_image.c` implementation and `low.c`'s reservation are replaced in place, since the compat files hold their names. They are in develop at b336d53. The binaries that link them are not byte-identical (below).
+- **Checks** (D249's method):
+  - **Setup:** each target built from develop at b336d53 and from this branch in the same `build/rv-*` folders, with `SOURCE_DATE_EPOCH=1764000000` and a `git` whose `describe` prints a fixed string. Loaded sections compared: ELF `SHF_ALLOC`, PE non-debug, Mach-O sections. Where they differ, every function's disassembly compared with addresses normalised.
+  - **Vita** `spyro_vita.velf` (50 sections) and **PS4** `spyro.elf` (26): identical.
+  - **linux32, linux32 native-mem, linux64** and **PC Windows:** identical but `__TIME__`/`__DATE__`, which these containers' compilers stamp, and the build-id notes.
+  - **PC Linux:** of 9,161 functions only `low_trap` changed: the refresh's page-size step in `lp64_low_image_dyn.c` (`getpagesize()`, 4,096 on x86-64).
+  - **linuxa64, macos, PC macOS:**
+    - Changed: the three start-up functions (renamed; the words are an argument; the kit adds a NULL check), and `main`'s call, which passes `s1_pie_words`. Elsewhere only padding and addresses moved.
+    - Unchanged: linuxa64's section addresses, so the kit's toolchain didn't change its layout.
+    - On macos the data image (`__DATA,__data`, `spyro_labels`) is identical, so `asm_macho.py` writes what `data2s.py --macho` wrote.
+  - **PC Linux on ARM:** the same, plus the reservation from the kit (`low_trap`, `lp64_reserved_pages`, `lp64_is_low`) and one data address's page offset.
+  - **`tools/host_checks.sh`** against linux32 native-mem (`logs/rv-l32n*`):
+    - linuxa64 and macos, plain and with `EXTRA="--interp --widescreen"`: demo, whole, routeA and routeB give the same 279 files (traces, shots, audio, cards); every run exits 0.
+    - The vcache run's `vcache.txt`: the same file on linuxa64 and macos. The macos binary from develop gives the same `vcache.txt` and trace.
+    - Against linux32 (x87 floats) it differs in 7 lines, as develop already does; D267 said four.
+  - **The completeness check** (`p32_offset_check.py build/rv-linux64`): 167 units, 0 diagnostics, both the kit's (`--define SPYRO_P32_OFFSET=1`) and spyro's.
+  - **`p32_narrow_check.py`**, plain and `--raw`: the kit's output is byte-identical to spyro's (`--raw` lists `MEM_MODEL_AT` and `HAND_CX_PRIM`, the two accessor macros).
+  - **`p32_decl_check.py build/rv-linux64`:** 0 slot/pointer mismatches. There are 11 pointer/int32 mismatches: glibc's `strerror_r`, and the hand renderers' and particle code's entries, whose `P32_ARG_T` is `unsigned int` on linux64. The same 11 come from spyro's checker and the fixed kit one. This change doesn't affect them: that text and linux64's binary are unchanged. The D262 run on linux64 reported only `strerror_r`; the other 10 deserve a look of their own.
+  - `tools/check_no_assets.sh`: passes.
+  - **Not run:** the checking build (`-DSPYRO_P32_CHECK=ON`), ctest, Vita3K and hardware. The Vita binary is identical.
 - **Next free number:** take one with `autopilot.py claim-decision`.
+
