@@ -19,3 +19,4 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D279 re-vendor Encore's ARM64 offset model (Encore #148) (2026-11-27T09:54:46Z)
 - D280 259 (2026-11-27T15:28:33Z)
 - D281 259 (2026-11-27T15:36:37Z)
+- D282 title flash: presenter LOD state copy (#271 regression) + WOBBLE FIX row (2026-11-27T16:52:52Z)
