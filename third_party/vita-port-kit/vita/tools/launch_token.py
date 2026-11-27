@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Write a launch-token request (vita/runtime/launchgate) from the current launch's log: the last
+"""Write a launch-token request (targets/vita/runtime/launchgate) from the current launch's log: the last
 `PREFIX: armed ...; token PID NONCE` line's token, as the request file's one line.
 
-  vita/tools/launch_token.py RUN/game.log --output present-start.req [--prefix vpk-presenttrace]
+  targets/vita/tools/launch_token.py RUN/game.log --output present-start.req [--prefix vpk-presenttrace]
 
 Upload the file to the path the game polls (e.g. ux0:data/<game>/present-start.req) only for the launch this log is
 from; success is the game's `start accepted` line in the log, not the FTP client's size check (the game may consume

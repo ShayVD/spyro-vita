@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # v3k_run.sh against a fake Vita3K (a script that plays the game): the stop line, a crash, a hang, a hang line,
-# the lock, the config lines, the collected files, no Vita3K left behind. Needs bash and python3 only.
-#   vita/tools/test/v3k_run_test.sh
+# the lock, the config lines, the collected files, no Vita3K left behind; ap_gate's contract and its count of
+# Vita3K's invalid memory accesses, and where they happened (v3k_where.py through a fake nm). Needs bash and python3 only.
+#   targets/vita/tools/test/v3k_run_test.sh
 set -euo pipefail
 tools=$(cd "$(dirname "$0")/.." && pwd)
 w=$(cd "$(mktemp -d "${TMPDIR:-/tmp}/v3k_run_test.XXXXXX")" && pwd) # no // (a TMPDIR ending in /)
@@ -36,7 +37,15 @@ case $mode in
         [ -d "$FAKE_DATA/save" ] && echo had > "$FAKE_DATA/../fake-save.txt"
         echo save > "$FAKE_DATA/save/card0"; mkdir -p "$FAKE_DATA/logs"; echo extra > "$FAKE_DATA/logs/extra.txt"
         echo "frames=10 reached, exiting" >> "$FAKE_DATA/mock.log"; exit 0 ;;
-  crash) exit 139 ;;
+  invalid) # Vita3K's own lines: each access is followed by a CPU dump and the instruction it ran
+           [ -n "${FAKE_SLIDE:-}" ] && echo "[09:37:11.843] |I| [load_self]: Loaded module segment 0 @ [$FAKE_SLIDE - 0x8200D674 / 0x81000000] (size: 0x0000D674) of module app0:eboot.bin"
+           for a in 0x0 0x1f800004 0x0; do echo "[error] Invalid read of uint32_t at address: $a"
+             if [ -n "${FAKE_SLIDE:-}" ]; then echo "PC: 0x820001de,   SP: 0x8043fde0,   LR: 0x82000273"
+             else echo "PC: 0x810001de,   SP: 0x8043fde0,   LR: 0x81000273"; fi
+             printf 'r0 : 0x00000010   r6 : 0x00000000\nThumb: true\n\n[error] [MemoryRead]: Executing: ldr r0, [r0]\n'; done
+           echo "[error] Invalid write of uint16_t at addr: 0x0, val = 0x1"
+           echo "frames=10 reached, exiting" >> "$FAKE_DATA/mock.log"; exit 0 ;;
+  crash) echo "PC: 0x81001234,   SP: 0x7f000000,   LR: 0x81000ff0"; exit 139 ;;
   hang) exec sleep 1000 ;;
   hangre) echo "watchdog: hang at 99" >> "$FAKE_DATA/mock.log"; exec sleep 1000 ;;
 esac
@@ -89,6 +98,10 @@ sleep 2
 check "a second run waits for the lock, then gives up" '[ "$(V3K_LOCK_WAIT=0 run "$w/o7" 30 mock=stop)" = 1 ] && grep -q "held by PID" "$w/out.txt"'
 wait $holder || true
 check "no HW_GAME: exit 1" '[ "$(HW_GAME= run "$w/o8" 30)" = 1 ]'
+if [ "$(uname -s)" != Darwin ]; then # KEYS= itself: test/v3k_keys_test.sh, on macOS
+  echo "press cross" > "$w/keys.txt"
+  check "KEYS= off macOS: exit 1, said, before the lock" '[ "$(KEYS="$w/keys.txt" run "$w/o9" 30 mock=stop)" = 1 ] && grep -q "macOS only" "$w/out.txt" && [ ! -e "$w/o9/v3k-run.txt" ]'
+fi
 # the lock: left by a dead run, left without a PID (old and fresh), and a runner stopped with SIGTERM
 sh -c 'exit 0' & dead=$!; wait $dead || true
 mkdir "$data.lock"; echo $dead > "$data.lock/pid"
@@ -131,4 +144,37 @@ check "HW_SAVE_DIR unset: no save folder made, the data folder left alone" '[ "$
 check "the v3k_config_base hook gives the first lines" '[ "$(HW_GAME="$w/game/hook.game" run "$w/g3" 30 mock=stop)" = 0 ] && [ "$(head -1 "$w/g3/config.txt")" = hooked=1 ] && ! grep -q realtime "$w/g3/config.txt"'
 printf 'log-level: 0\nother: kept\n' > "$w/v3k.yml"; cp "$w/v3k.yml" "$w/v3k.yml.orig"
 check "Vita3K config: a copy at log-level 4, passed with -c, the source untouched" '[ "$(V3K_CONFIG="$w/v3k.yml" run "$w/g4" 30 mock=stop)" = 0 ] && grep -q "^log-level: 4$" "$w/g4/vita3k-config.yml" && grep -q "^other: kept$" "$w/g4/vita3k-config.yml" && grep -q -- "-c $w/g4/vita3k-config.yml" "$w/fs/ux0/data/fake-args.txt" && cmp -s "$w/v3k.yml" "$w/v3k.yml.orig"'
+
+# ap_gate: the autopilot's runner contract over v3k_run.sh (playbooks/port-autopilot/targets.md)
+gate() { local r=0; HW_GAME= "$tools/ap_gate" "$@" > "$w/out.txt" 2>&1 || r=$?; echo $r; }
+check "ap_gate info: ready, a vpk" '"$tools/ap_gate" info --target vita | grep -q "\"status\": \"ready\", \"artifact\": \"vpk\""'
+check "ap_gate run: exit 0, run.log and run.txt" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/a1" 30 mock=stop)" = 0 ] && grep -q reached "$w/a1/run.log" && grep -q "^result=stop" "$w/a1/run.txt" && grep -q "^artifact_sha1=" "$w/a1/run.txt" && grep -q "^target=vita" "$w/a1/run.txt" && [ -f "$w/a1/10.png" ]'
+check "ap_gate run: no invalid accesses counted as 0" 'grep -q "^invalid_accesses=0$" "$w/a1/run.txt" && grep -q "^ap_gate: invalid memory accesses: 0$" "$w/out.txt"'
+# Vita3K's invalid-access lines (kb vita3k-invalid-access-does-not-fail-run): counted, named, and a fail by default
+check "ap_gate run: invalid accesses after the stop line are 6" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/i1" 30 mock=invalid)" = 6 ] && grep -q "^invalid_accesses=4$" "$w/i1/run.txt" && grep -q "^result=stop" "$w/i1/run.txt" && grep -q "invalid memory accesses: 4$" "$w/out.txt" && grep -q "FAIL: the stop line was reached" "$w/out.txt"'
+check "ap_gate run: the addresses, most frequent first" 'grep -A1 "most frequent addresses" "$w/out.txt" | grep -Eq "^  3 0x0$" && grep -Eq "^  1 0x1f800004$" "$w/out.txt"'
+check "ap_gate run: AP_GATE_INVALID_FAIL=0 reports and passes" '[ "$(AP_GATE_INVALID_FAIL=0 gate run --target vita --game "$w/game/hw.game" "$w/i2" 30 mock=invalid)" = 0 ] && grep -q "^invalid_accesses=4$" "$w/i2/run.txt" && ! grep -q FAIL "$w/out.txt"'
+check "ap_gate run: AP_GATE_INVALID_RE overrides the pattern" '[ "$(AP_GATE_INVALID_RE="Invalid write" gate run --target vita --game "$w/game/hw.game" "$w/i3" 30 mock=invalid)" = 6 ] && grep -q "^invalid_accesses=1$" "$w/i3/run.txt"'
+cp "$w/game/build/mock.vpk" "$w/other.vpk"
+check "ap_gate run: ARTIFACT runs another VPK" '[ "$(ARTIFACT="$w/other.vpk" gate run --target vita --game "$w/game/hw.game" "$w/a2" 30 mock=stop)" = 0 ] && grep -q -- "-w $w/other.vpk" "$w/fs/ux0/data/fake-args.txt"'
+# where: the CPU dumps named from the build's ELF (a fake nm, as the CI has no VitaSDK)
+cat > "$w/fake-nm" <<'NM'
+#!/usr/bin/env bash
+[ -f "${@: -1}" ] || exit 1
+printf '81000000 T _start\n810001d8 T stub_poke\n810001de T stub_peek\n810001e2 T main\n81000400 t later\n'
+NM
+chmod +x "$w/fake-nm"; echo elf > "$w/game/build/mock.elf"
+{ cat "$w/game/hw.game"; echo "HW_ELF=build/mock.elf"; } > "$w/game/elf.game"
+check "ap_gate run: the PC and LR named from HW_ELF, the slide assumed 0" '[ "$(AP_GATE_NM="$w/fake-nm" gate run --target vita --game "$w/game/elf.game" "$w/e1" 30 mock=invalid)" = 6 ] && grep -q "^   2  PC 0x810001de = stub_peek  LR 0x81000273 = main+0x90  invalid read at 0x0  (ldr r0, \[r0\])$" "$w/e1/where.txt" && grep -q "^   1  PC 0x810001de = stub_peek .* invalid read at 0x1f800004" "$w/e1/where.txt" && grep -q "slide 0x0 (assumed" "$w/out.txt"'
+check "ap_gate run: the slide from Vita3K's segment line" '[ "$(FAKE_SLIDE=0x82000000 AP_GATE_NM="$w/fake-nm" gate run --target vita --game "$w/game/elf.game" "$w/e2" 30 mock=invalid)" = 6 ] && grep -q "slide 0x1000000 (from Vita3K" "$w/e2/where.txt" && grep -q "PC 0x820001de = stub_peek  LR 0x82000273 = main+0x90" "$w/e2/where.txt"'
+check "ap_gate run: no HW_ELF prints the dumps unnamed" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/e3" 30 mock=invalid)" = 6 ] && grep -q "CPU dumps, unnamed (set HW_ELF" "$w/out.txt" && grep -q "^  PC: 0x810001de," "$w/out.txt" && [ ! -f "$w/e3/where.txt" ]'
+check "ap_gate run: ARTIFACT= ignores the game file's HW_ELF" '[ "$(ARTIFACT="$w/other.vpk" AP_GATE_NM="$w/fake-nm" gate run --target vita --game "$w/game/elf.game" "$w/e4" 30 mock=invalid)" = 6 ] && grep -q "unnamed (ARTIFACT= runs another build" "$w/out.txt"'
+check "ap_gate run: a missing ELF is said" '{ cat "$w/game/hw.game"; echo "HW_ELF=build/none.elf"; } > "$w/game/noelf.game"; [ "$(gate run --target vita --game "$w/game/noelf.game" "$w/e5" 30 mock=invalid)" = 6 ] && grep -q "unnamed (no ELF at .*build/none.elf (HW_ELF))" "$w/out.txt"'
+check "ap_gate run: a crash is 2" '[ "$(gate run --target vita --game "$w/game/hw.game" "$w/a3" 30 mock=crash)" = 2 ] && grep -q "^invalid_accesses=0$" "$w/a3/run.txt" && grep -q "^  PC: 0x81001234," "$w/out.txt"'
+"$tools/v3k_run.sh" "$w/a4" 6 mock=hang > /dev/null 2>&1 &
+holder=$!
+sleep 2
+check "ap_gate run: a busy Vita3K lock is 5" '[ "$(V3K_LOCK_WAIT=0 gate run --target vita --game "$w/game/hw.game" "$w/a5" 30 mock=stop)" = 5 ]'
+wait $holder || true
+check "ap_gate run: no game file is 1" '[ "$(gate run --target vita "$w/a6" 30)" = 1 ]'
 [ $fails = 0 ] && echo "v3k_run_test: ok" || { echo "v3k_run_test: $fails failed"; exit 1; }

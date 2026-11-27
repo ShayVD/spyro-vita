@@ -1,5 +1,5 @@
 # vpk_add_app: a linked Vita executable target packed as a VPK, refusing a link that lost its process parameters.
-# The same commands as vita/tools/vpk_pack.py (kh1-decomp's packing), in place of vitasdk's vita_create_self +
+# The same commands as targets/vita/tools/vpk_pack.py (kh1-decomp's packing), in place of vitasdk's vita_create_self +
 # vita_create_vpk (spyro-vita's packing, from its src/platform/vita/CMakeLists.txt @ 987363e).
 #
 #   include(<kit>/vita/cmake/VpkApp.cmake)        after vitasdk's toolchain file (it sets VITA_ELF_CREATE ...)
@@ -13,7 +13,7 @@
 #
 # SCE_HEADROOM (default: the variable VPK_SCE_HEADROOM, else none) keeps that much room between the text and data
 # segments, where vita-elf-create puts its SCE data (a few KB); without it a build whose text ends just below a
-# 64 KiB boundary fails "segment 1 overlaps" (vita/docs/gotchas.md 17, spyro-vita D32). It costs address space, not
+# 64 KiB boundary fails "segment 1 overlaps" (targets/vita/docs/gotchas.md 17, spyro-vita D32). It costs address space, not
 # memory. Off by default so an existing game's layout doesn't move under it.
 #
 # UNSAFE makes the eboot.bin without vita-make-fself's -s: the app then sees the whole file system (ux0:pspemu,

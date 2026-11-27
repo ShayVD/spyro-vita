@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run a game's Vita build on a real PS Vita over Wi-Fi until it exits (config.txt's frames=) or a timeout,
-# and collect its log, its files and any new crash dump (vita/docs/hardware-runs.md). From spyro-vita
+# and collect its log, its files and any new crash dump (targets/vita/docs/hardware-runs.md). From spyro-vita
 # tools/vita/hw_run.sh @ e365217 (its decision D77; kh1-decomp carried a cut-down copy), the game's details
 # moved into a game file.
 #   HW_GAME=tools/vita/hw.game hw_run.sh OUT_DIR [TIMEOUT_S] [config line | @FILE]...
@@ -43,7 +43,7 @@
 # 0 only when the run ended at frames= (and, with HW_KEEP_APP=1, the eboot.bin went back).
 set -euo pipefail
 kit=$(cd "$(dirname "$0")" && pwd)
-: "${HW_GAME:?set HW_GAME to the hw.game file of the game (vita/tools/hw.game.example)}"
+: "${HW_GAME:?set HW_GAME to the hw.game file of the game (targets/vita/tools/hw.game.example)}"
 HW_GAME=$(cd "$(dirname "$HW_GAME")" && pwd)/$(basename "$HW_GAME")
 groot=$(git -C "$(dirname "$HW_GAME")" rev-parse --show-toplevel 2>/dev/null || (cd "$(dirname "$HW_GAME")/../.." && pwd)) # the game file is ROOT/tools/vita/hw.game
 HW_NAMES=() HW_COLLECT=() HW_HANG_RE= HW_SAVE_DIR= HW_QUIET_S=0 HW_POLL_S=3 HW_TIMEOUT=600 HW_PAD_NAME=pad.txt
@@ -58,7 +58,7 @@ export HW_GAME HW_TITLE_ID HW_DATA
 [ -z "${VITA_IP:-}" ] && [ -f "$groot/tools/vita/hw.env" ] && . "$groot/tools/vita/hw.env" # VITA_IP given wins
 : "${VITA_IP:?set VITA_IP or write it in tools/vita/hw.env}"
 export VITA_IP VITA_FTP_PORT VITA_CMD_PORT
-state=${HW_STATE:-$HOME/.cache/vita-port-kit}
+state=${HW_STATE:-$HOME/.cache/vita-port-kit} # the pre-Encore name, kept: every vendored copy, old or new, must share one lock
 restore_only=0
 [ "${1:-}" = --restore ] && { restore_only=1; set -- "$state/restore-$HW_TITLE_ID"; }
 put_file=
@@ -80,6 +80,7 @@ poll=$HW_POLL_S
 names=(config.txt "$HW_LOG" "$HW_PAD_NAME" ${HW_NAMES[@]+"${HW_NAMES[@]}"})
 mkdir -p "$out" "$state"
 out=$(cd "$out" && pwd)
+mkdir -p "$(dirname "$out/$HW_LOG")" # HW_LOG may be in a folder of HW_DATA (log/game.log)
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/hw_run.XXXXXX")
 
 v() { python3 -I "$kit/hw_ftp.py" "$@"; }
@@ -91,7 +92,8 @@ bytes() { wc -c < "$1" | tr -d ' '; }
 
 # kind of NAME in HW_DATA: d, f, or nothing (listing cached per call)
 listing=
-relist() { listing=$(v ls "$data"); }
+# a first run of a new title finds no HW_DATA (the app makes it at its first start): make it
+relist() { listing=$(v ls "$data" 2>/dev/null) || { v mkdir "$data"; listing=$(v ls "$data"); }; }
 kind() { awk -v n="$1" '{ name = $0; sub(/^[df] [0-9]+ /, "", name); if (name == n) { print $1; exit } }' <<< "$listing"; }
 remove() { # a run's own file or folder
   case $(kind "$1") in

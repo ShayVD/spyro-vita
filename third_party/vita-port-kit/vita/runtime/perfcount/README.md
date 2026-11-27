@@ -7,7 +7,7 @@ every `window` frames one line goes to the log:
     vpk-perfcount: w FIRST LAST FRAMES draws=1234 tex.uploads=56 ...
 
 - `vpk_pc_init(&config)` (optional): `window` (default 300), `prefix`, `log` (`vpk_log`).
-- `id = vpk_pc_register("draws")` once per counter (up to 32; names of letters, digits, `_` and `.`, at most 23).
+- `id = vpk_pc_register("draws")` once per counter (up to 64; names of letters, digits, `_` and `.`, at most 23).
 - `vpk_pc_add(id, n)` where the work happens, from any thread (a relaxed atomic add).
 - `vpk_pc_frame(frame)` once per game frame on one thread; `vpk_pc_flush()` at the run's stop.
 - `../../tools/perf_report.py` reads the lines: per-frame means of one run, or two runs compared with a noise

@@ -1,0 +1,2 @@
+core/include/encore/audio_ring.h
+core/src/enc_audio_ring.c

@@ -1,4 +1,4 @@
-/* perfcount: two windows, a flush, bad names and ids, a full table. VPK_PERFCOUNT_MUTANT=1 (totals not reset
+/* perfcount: two windows, a flush, bad names and ids, a full table and its uncut line. VPK_PERFCOUNT_MUTANT=1 (totals not reset
  * after a line) must fail. */
 #include <stdarg.h>
 #include <stdio.h>
@@ -54,6 +54,14 @@ int main(void) {
     last = vpk_pc_register("abcdefghijklmnopqrstuvw"); /* exactly 23 characters: accepted (the last slot) */
     CHECK(last == VPK_PC_MAX - 1);
     CHECK(vpk_pc_register("one_more") == -1);
+    CHECK(VPK_PC_MAX >= 48); /* kh1-vita's phase-7 counter set */
+    /* a full table's line is never cut: the last counter, at its longest name and largest value, ends the line */
+    vpk_pc_add(last, 4294967295u);
+    vpk_pc_frame(6);
+    vpk_pc_flush();
+    size_t len = strlen(logbuf);
+    CHECK(len > 40 && strcmp(logbuf + len - 36, " abcdefghijklmnopqrstuvw=4294967295\n") == 0);
+    CHECK(strstr(logbuf, " c2=0 ") != NULL);
     if (fails) { printf("perfcount_test: %d failed\n", fails); return 1; }
     printf("perfcount_test: ok\n");
     return 0;
