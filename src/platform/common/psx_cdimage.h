@@ -6,10 +6,10 @@
 #ifndef PSX_CDIMAGE_H
 #define PSX_CDIMAGE_H
 
-/* The sector reader, sniffing, directory walk and SHA-1 are vita-port-kit's
- * discimage (third_party/vita-port-kit/vita/runtime/discimage, D108);
+/* The sector reader, sniffing, directory walk and SHA-1 are Encore's disc
+ * image layer (enc_dimg, third_party/encore/core, D108);
  * cdimage.c keeps the image search, the messages and the disc check. */
-#include "../../../third_party/vita-port-kit/vita/runtime/discimage/vpk_discimage.h"
+#include "../../../third_party/encore/core/include/encore/discimage.h"
 #include "psx_region.h"
 
 #ifdef __cplusplus
@@ -106,11 +106,11 @@ int psx_cdimage_read(int lba, int off, void *buf, int n);
  * check (D132). */
 int psx_cd_check_release(const PsxRegion *r, const char *exe_sha1, PsxCdError *err);
 
-/* SHA-1, for the disc check and the tests: vita-port-kit's (D108). */
-typedef VpkSha1 PsxSha1;
-#define psx_sha1_init vpk_sha1_init
-#define psx_sha1_update vpk_sha1_update
-#define psx_sha1_hex vpk_sha1_hex
+/* SHA-1, for the disc check and the tests: Encore's (D108). */
+typedef EncSha1 PsxSha1;
+#define psx_sha1_init enc_sha1_init
+#define psx_sha1_update enc_sha1_update
+#define psx_sha1_hex enc_sha1_hex
 
 /* libcd.c's I/O accounting, for cdimage.c's reads */
 void psx_cd_io_add(unsigned bytes, unsigned long long t0);

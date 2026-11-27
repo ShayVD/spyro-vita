@@ -1,7 +1,7 @@
-/* Work counters (issue #160, D165): vita-port-kit's vita/runtime/perfcount
- * (third_party/vita-port-kit, vendored). One "vpk-perfcount:" line in
+/* Work counters (issue #160, D165): Encore's targets/vita/runtime/perfcount
+ * (third_party/encore, vendored). One "vpk-perfcount:" line in
  * spyro.log every 300 vblanks, each counter the window's sum, which the
- * kit's vita/tools/perf_report.py reads and compares between two runs.
+ * kit's targets/vita/tools/perf_report.py reads and compares between two runs.
  * Vita3K's timing is not evidence, but the work a frame does is the same
  * there and on the Vita (phase 8 of the port autopilot).
  *
@@ -21,7 +21,8 @@
  * #179: the vertex cache's record split and what its lookups found again
  * go on a line of their own, "vpk-perfcount-vc:" in the kit's format and
  * windows (perf_report.py --prefix vpk-perfcount-vc), since the kit's
- * table holds 32 counters and 31 are taken (vpk_perfcount.h VPK_PC_MAX):
+ * table held 32 counters and 31 were taken (vpk_perfcount.h VPK_PC_MAX; 64
+ * since Encore's kh1-vita change, #251 kept the two lines as they were):
  *  - vc.rec.kept, vc.rec.once, vc.rec.game: the logic draw's projections
  *    the game thread kept for its walk, worked out at once, and worked out
  *    in all (vcache.c g_vcache_rec[0]); vc.rec.div, vc.rec.probe,

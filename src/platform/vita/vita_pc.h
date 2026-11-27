@@ -1,9 +1,9 @@
-/* Work counters (issue #160, D165): perfcount.c, over vita-port-kit's
- * vita/runtime/perfcount. VPC_* index g_vpc, the kit's ids. */
+/* Work counters (issue #160, D165): perfcount.c, over Encore's
+ * targets/vita/runtime/perfcount. VPC_* index g_vpc, the kit's ids. */
 #ifndef VITA_PC_H
 #define VITA_PC_H
 
-#include "../../../third_party/vita-port-kit/vita/runtime/perfcount/vpk_perfcount.h"
+#include "../../../third_party/encore/targets/vita/runtime/perfcount/vpk_perfcount.h"
 
 enum {
   VPC_GL_DRAWS,      /* glDrawArrays calls */
@@ -39,7 +39,7 @@ enum {
   VPC_VC_INVALID,    /* vertex cache, the game thread's (#178): projections recorded invalid */
   VPC_VC_FALLBACK,   /* ... polygons drawn affine because a vertex's key was invalid */
   VPC_VC_CLAMPED,    /* ... projections the GTE clamped, recorded at their exact position */
-  VPC_COUNT          /* at most VPK_PC_MAX (32); #179's vertex cache counters are on a line of
+  VPC_COUNT          /* at most VPK_PC_MAX (64; 32 until #251); #179's vertex cache counters are on a line of
                         their own (perfcount.c, vpk-perfcount-vc) */
 };
 extern int g_vpc[VPC_COUNT];

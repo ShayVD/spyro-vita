@@ -1,4 +1,4 @@
-/* The Vita's widened vblank counter (vita-port-kit's vpk_vcount.h, D90).
+/* The Vita's widened vblank counter (Encore's vpk_vcount.h, D90).
  *
  * The display's sceDisplayGetVcount counts in 16 bits on hardware. Before
  * D90 vblank.c's PsyX_WaitForTimestep compared it with a 32-bit target, so

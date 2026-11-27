@@ -9,8 +9,40 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "version": 1,
   "game": "spyro",
   "phase": 5,
-  "workers": [],
-  "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
+  "workers": [
+    {
+      "issue": 283,
+      "branch": "refactor/283-vita-on-encore-s-platform-interface",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-283",
+      "started_at": "2026-11-27T06:29:03Z",
+      "files": [
+        "src/platform/vita/video.c",
+        "src/platform/vita/present_vita.c",
+        "src/platform/vita/pres_thread.c",
+        "src/platform/vita/gpu_gl.c",
+        "src/platform/vita/CMakeLists.txt"
+      ],
+      "agent": "ae596b6969b225d80",
+      "reported": true
+    },
+    {
+      "issue": 259,
+      "branch": "perf/259-draw-distance-2x-in-artisans-at-60-hz-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-259",
+      "started_at": "2026-11-27T07:29:51Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h",
+        "src/platform/vita/prof_draw.c",
+        "src/platform/linux32/prof_draw.c",
+        "src/platform/vita/lod_time.c",
+        "docs/presentation.md",
+        "src/platform/vita/main.c"
+      ],
+      "agent": "a7b715a9f3ac4ffcb"
+    }
+  ],
+  "last_good": "e603aaa7036fd47a059218dd50c3b6722ec2357d",
   "hardware_runs": [
     {
       "date": "2026-11-21 12:00",
@@ -186,6 +218,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
       "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
       "issue": 212
+    },
+    {
+      "title": "Hardware A/B for #271 (dd_free=1 vs 0): MAX grows over the 60 Hz budget where a draw writes no more than 1x",
+      "expected": "no more late vblanks per 300 with dd_free=1 in Artisans and Toasty, at x2.00 where 1x was held",
+      "issue": 271,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
     }
   ],
   "owner_decisions": [
@@ -253,7 +294,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "question": "work out kept vcache projections on core 2 (large restructure)",
       "pick": "after #259 hardware A/B",
       "status": "open"
-    }
+    },
+    "2026-11-26: #251 split into step 1 (#251) and #283-#288 (one area per PR, chained); #272 design split out as #282 (#272 depends on it). #264, #276, #279, #280, #281 run in their own sessions (pc-menu-279, pc-load-280, offset-vc-281, ps4-image-264, encore-zsh-276): left without a phase label so pick never takes them."
   ],
   "attempts": {
     "161": 1,
@@ -277,16 +319,24 @@ committed on the `autopilot` branch. The JSON block is what the tools read
     "count": 6
   },
   "round": {
-    "n": 12,
-    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/base-85a7b2c",
-    "base_commit": "85a7b2c9c2beb85b8b7b4cad0243377d2bfc6c56",
-    "started_at": "2026-11-22T06:56:29Z",
-    "filed": 31,
+    "n": 13,
+    "target": "vita",
+    "base_run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
+    "base_commit": "20d3514589db959121604783a5876ea91f152ad9",
+    "started_at": "2026-11-26T22:46:15Z",
+    "filed": 7,
     "investigated": true
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 283,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-283.gate.log",
+    "started_at": "2026-11-27T07:56:28Z"
+  },
   "batch": null,
   "lanes": [
     5
@@ -298,8 +348,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         8
       ],
       "baselines": {
-        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-20d3514",
-        "commit": "20d3514589db959121604783a5876ea91f152ad9"
+        "run_dir": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/runs/vita/base-e603aaa",
+        "commit": "e603aaa7036fd47a059218dd50c3b6722ec2357d"
       }
     }
   },
@@ -554,3 +604,16 @@ continue.
 - 2026-11-25T21:46:00Z #266 no commit 2 h 10, alive (waiting behind #261's host batch since 20:10), nudged to commit WIP; asked #261 to split long container batches
 - 2026-11-26 10:55 UTC: stop on the owner's word ("we should wrap up the loop") after hardware session 9 (D264); report.md updated; release PR to main and the retro next.
 - 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
+- 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set
+- 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
+- 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
+- 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
+- 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
+- 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
+- 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
+- 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
+- 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
+- 2026-11-27T06:29Z shared 5, vita 8: #296 reported; baseline routes then #296 gate running; dispatched #283 and #294 (machine quiet).
+- 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
+- 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
+- 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.

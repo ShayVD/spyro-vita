@@ -17,19 +17,28 @@
 
 static char s_alt[65536];
 
+/* the faulting instruction and the stack pointer: x86-64's, or AArch64's (Linux on ARM, D250 O5) */
+#if defined(__aarch64__)
+#define REG_IP_(uc) (uc)->uc_mcontext.pc
+#define REG_SP_(uc) (uc)->uc_mcontext.sp
+#else
+#define REG_IP_(uc) (uc)->uc_mcontext.gregs[REG_RIP]
+#define REG_SP_(uc) (uc)->uc_mcontext.gregs[REG_RSP]
+#endif
+
 static void on_fault(int sig, siginfo_t *si, void *uc_) {
   ucontext_t *uc = uc_;
   void *bt[48];
   char line[256];
   int n = backtrace(bt, 48), len;
   len = snprintf(line, sizeof line, "spyro: signal %d at address %p, rip 0x%llx, rsp 0x%llx\n", sig,
-                 si->si_addr, (unsigned long long)uc->uc_mcontext.gregs[REG_RIP],
-                 (unsigned long long)uc->uc_mcontext.gregs[REG_RSP]);
+                 si->si_addr, (unsigned long long)REG_IP_(uc),
+                 (unsigned long long)REG_SP_(uc));
   if (write(2, line, (size_t)len) < 0)
     (void)0;
   backtrace_symbols_fd(bt, n, 2);
   host_log("crash: signal %d at address %p, rip 0x%llx", sig, si->si_addr,
-           (unsigned long long)uc->uc_mcontext.gregs[REG_RIP]);
+           (unsigned long long)REG_IP_(uc));
   for (int i = 0; i < n; i++)
     host_log("crash: #%d %p", i, bt[i]);
   host_log_flush();

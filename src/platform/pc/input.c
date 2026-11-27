@@ -23,7 +23,8 @@
  *   Backspace or Tab     SELECT
  * read by gaps.c (G7): the backend's own keyboard map on pad 0 is a
  * different one, so its bits are taken back out of pad 0. F11 and Alt+Enter
- * are the backend's (fullscreen). */
+ * are the backend's (fullscreen). Esc or F1, or a gamepad's guide button,
+ * opens and closes the options menu (menu.c, D275), as SELECT+START does. */
 #include "pc.h"
 #include "gaps.h"
 #include "host.h"
@@ -50,6 +51,7 @@ static const struct {
 
 static EncMutex *s_mu;
 static uint16_t s_buttons;
+static int s_menu_key;
 static unsigned char s_sticks[4] = {0x80, 0x80, 0x80, 0x80};
 
 void pc_input_init(void) { enc_mutex_create(&s_mu); }
@@ -60,6 +62,7 @@ static unsigned char axis_byte(int16_t a) { return (unsigned char)((a + 32768) >
 void pc_input_update(void) {
   uint16_t m = pc_gap_keyboard_psx();
   uint32_t kb = pc_gap_backend_keyboard_bits();
+  int menu = pc_gap_menu_key();
   unsigned char st[4] = {0x80, 0x80, 0x80, 0x80};
   int best = 0; /* the stick furthest from centre wins */
   for (int p = 0; p < ENC_PC_PADS; p++) {
@@ -69,6 +72,8 @@ void pc_input_update(void) {
       continue;
     if (p == 0) /* the backend's keyboard map: not ours (gaps.c, G7) */
       g.buttons &= ~kb;
+    if (g.buttons & ENC_BTN_MENU) /* the guide button */
+      menu = 1;
     for (size_t i = 0; i < sizeof k_buttons / sizeof k_buttons[0]; i++)
       if (g.buttons & k_buttons[i].enc)
         m |= k_buttons[i].bit;
@@ -100,8 +105,17 @@ void pc_input_update(void) {
   }
   enc_mutex_lock(s_mu);
   s_buttons = m;
+  s_menu_key = menu;
   memcpy(s_sticks, st, 4);
   enc_mutex_unlock(s_mu);
+}
+
+int pc_input_menu_key(void) {
+  int k;
+  enc_mutex_lock(s_mu);
+  k = s_menu_key;
+  enc_mutex_unlock(s_mu);
+  return k;
 }
 
 void pc_input_read(uint16_t *buttons, unsigned char sticks[4]) {

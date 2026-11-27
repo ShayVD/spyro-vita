@@ -29,14 +29,19 @@ target_compile_options(encore_pc PRIVATE -O2 -Wall)
 target_link_libraries(encore_pc PUBLIC SDL3::SDL3-static)
 if(WIN32)
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_win.c" "${WINPOSIX_DIR}/enc_winposix.c")
-elseif(APPLE)
-  set(PC_ENCORE_SRCS) # the offset model: src/platform/common/p32_image.c (low.c)
+elseif(APPLE OR SPYRO_PC_TARGET MATCHES "aarch64")
+  # the offset model: src/platform/common/p32_image.c; Linux on ARM's low
+  # 4 GB reserved by low.c (Encore's lp64_low_image_dyn.c is x86-64 only)
+  set(PC_ENCORE_SRCS)
 else()
   set(PC_ENCORE_SRCS "${LOW_IMAGE_DIR}/lp64_low_image_dyn.c")
 endif()
 add_executable(spyro MACOSX_BUNDLE ${PC_SRCS} ${PC_ENCORE_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
-  "${LINUX32_DIR}/savestate_host.c")
+  "${LINUX32_DIR}/savestate_host.c"
+  # the options menu's GAME rows (skipping the logos, the cheats; D275): the
+  # PS4's, plain C over src/game/cheats_port.c, shared as they are
+  "${CMAKE_SOURCE_DIR}/src/platform/ps4/menu_game.c")
 set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 # gpu=0's software rasterizer next to the GPU renderer (D243): its GR_*
 # entry points renamed soft_*, as in the Vita build (gpu.c dispatches)

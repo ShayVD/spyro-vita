@@ -25,7 +25,7 @@
 #include <math.h>
 #include <psp2/kernel/processmgr.h>
 #include <psp2/touch.h>
-#include "../../../third_party/vita-port-kit/vita/runtime/touch/vpk_touch.h"
+#include "../../../third_party/encore/targets/vita/runtime/touch/vpk_touch.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +69,8 @@ void vita_menu_request(void); /* menu.c: open the menu at the next VSync */
 /* Touch, read with sceTouch for both panels: SDL's Vita touch exists only
  * with its video subsystem, which gpu=1 (vitaGL) doesn't start (main.c).
  * Positions are 0..1 across a panel's active area. The panels, their areas
- * and the tap below are vita-port-kit's touch module (D109). */
+ * and the tap below are Encore's touch module (targets/vita/runtime/touch,
+ * D109). */
 static void touch_init(void) { vpk_touch_init(); }
 
 /* A panel's fingers now: up to max (x, y) pairs and ids; returns how many. */

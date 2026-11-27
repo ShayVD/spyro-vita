@@ -1,0 +1,11 @@
+{"date": "2026-11-27", "id": "ps1-wobble-fix-name-screen-points-by-projection", "note": "hand-made HUD screen points must not take a projection's place; they stay exempt, now counted on their own `vcache HUD:` line", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#245"}
+{"date": "2026-11-27", "id": "emulator-broken-frame-check-console-shots", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#245"}
+{"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "11 host FNV pairs from clean objects, with a HUD byte added so every changed polygon is shown to be a HUD one", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#245"}
+{"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "the race test hashes each entry and log place with FNV against a single thread; the doc names the 11-route FNV `--strict` gate for #272", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#282"}
+{"date": "2026-11-27", "id": "vita-vcount-16-bit-wraps", "note": "vcount header byte-identical through the move; vcount and vcount_mutant tests pass", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#251"}
+{"date": "2026-11-27", "id": "shared-hook-needs-guard-on-every-branch", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
+{"date": "2026-11-27", "id": "audio-held-level-for-vblank-paced-mixer", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
+{"date": "2026-11-27", "id": "emulator-broken-frame-check-console-shots", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#271"}
+{"date": "2026-11-27", "id": "colima-sshfs-loses-ld-execute-bit", "note": "re-check right before running, inside the container, with link_exec.sh's 5-try loop", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
+{"date": "2026-11-27", "id": "colima-sshfs-no-chown-stale-attrs", "note": "tc checks inside the container, not only from the Mac", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
+{"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "`--strict` per-polygon FNV from clean objects on 11 host pairs, every polygon identical", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#296"}
