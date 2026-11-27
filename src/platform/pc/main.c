@@ -65,7 +65,9 @@ static unsigned char s_game_stack[GAME_STACK] __attribute__((aligned(STACK_ALIGN
 
 PcOpts g_pc_opts = {.stats = 1, .analog = 1, .vsync = 1, .filter = 1, .widescreen = 1,
                     .interp = 1, .win_w = 1280, .win_h = 720,
-                    .gpu = 1, .persp = 1, .subpixel = 1}; /* D243 */
+                    .gpu = 1, .persp = 1, .subpixel = 1, /* D243 */
+                    .draw_distance = 100, .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1,
+                    .cam_speed = 100, .cam_recentre = 1}; /* the menu's rows (D275) */
 char g_pc_user_dir[1024];
 static char s_disc_dir[1024];
 volatile int g_pc_quit;
@@ -94,8 +96,23 @@ static int low(const void *p, size_t len) { return p32_within(p, len); }
 static int low(const void *p, size_t len) { return (uintptr_t)p + len <= LOW_LIMIT; }
 #endif
 
+/* V1,V2,...; a later setting (the command line, read again after
+ * config.txt) replaces an earlier one */
+static void parse_list(const char *v, int *out, int *n) {
+  const char *p = v;
+  *n = 0;
+  while (*p && *n < PC_MAX_SHOTS) {
+    out[(*n)++] = atoi(p);
+    p = strchr(p, ',');
+    if (!p)
+      break;
+    p++;
+  }
+}
+
 /* config.txt in the user folder, then the command line (which wins):
- * key=value lines, '#' comments; --key value or --key on the command line */
+ * key=value lines, '#' comments; --key value or --key on the command line.
+ * The options menu's rows (menu.c, D275) take the keys not named here. */
 static int set_opt(const char *key, const char *v) {
   int n = atoi(v);
   if (!strcmp(key, "frames"))
@@ -133,20 +150,17 @@ static int set_opt(const char *key, const char *v) {
       return -1;
     g_pc_opts.win_w = w;
     g_pc_opts.win_h = h;
-  } else if (!strcmp(key, "shot")) {
-    const char *p = v;
-    while (*p && g_pc_opts.nshots < PC_MAX_SHOTS) {
-      g_pc_opts.shots[g_pc_opts.nshots++] = atoi(p);
-      p = strchr(p, ',');
-      if (!p)
-        break;
-      p++;
-    }
-  } else if (!strcmp(key, "pad"))
+  } else if (!strcmp(key, "shot"))
+    parse_list(v, g_pc_opts.shots, &g_pc_opts.nshots);
+  else if (!strcmp(key, "menu_test"))
+    parse_list(v, g_pc_opts.menu_test, &g_pc_opts.nmenu_test);
+  else if (!strcmp(key, "menu_keys"))
+    snprintf(g_pc_opts.menu_keys, sizeof g_pc_opts.menu_keys, "%s", v);
+  else if (!strcmp(key, "pad"))
     snprintf(g_pc_opts.pad, sizeof g_pc_opts.pad, "%s", v);
   else if (!strcmp(key, "disc"))
     snprintf(g_pc_opts.disc, sizeof g_pc_opts.disc, "%s", v);
-  else
+  else if (!pc_menu_load(key, v))
     return -1;
   return 0;
 }
@@ -172,9 +186,10 @@ static void read_config(void) {
 static void usage(void) {
   fprintf(stderr,
           "usage: spyro [--disc DIR] [--fullscreen] [--window WxH] [--widescreen 0|1]\n"
-          "             [--interp 0|1] [--vsync 0|1] [--filter 0|1] [--analog 0|1]\n"
+          "             [--interp 0|1|4] [--vsync 0|1] [--filter 0|1] [--analog 0|1]\n"
           "             [--frames N] [--shot V1,V2,...] [--stats 0|1|2] [--pad FILE]\n"
           "             [--gpu 0|1] [--persp 0|1] [--subpixel 0|1] [--res 0..8] [--virtual 0|1]\n"
+          "             [--KEY VALUE] for any options menu row's config.txt key\n"
           "DIR holds the disc image (.bin + .cue), the extracted files or EBOOT.PBP.\n");
 }
 
@@ -301,6 +316,7 @@ static int game_thread(void *arg) {
   g_present.widescreen = g_pc_opts.widescreen != 0;
   g_present.interp = g_present.interp_mobys = g_present.interp_anim = g_pc_opts.interp != 0;
   g_present.stats = g_pc_opts.stats > 1;
+  pc_menu_init(); /* the menu's rows: draw distance, 60 Hz logic, the GAME rows (D275) */
   psx_clock_set_due_display(1); /* frames shown at their due display vblank (D148) */
   pc_frames_install_capture();
   host_log_flush();
@@ -398,7 +414,7 @@ int main(int argc, char **argv) {
   }
   find_disc_dir();
   host_log("disc folder %s", s_disc_dir);
-  if (g_pc_opts.nshots) {
+  if (g_pc_opts.nshots || g_pc_opts.nmenu_test) {
     char d[1100];
     snprintf(d, sizeof d, "%sshots", g_pc_user_dir);
     pc_mkdir(d);
