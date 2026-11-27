@@ -2211,5 +2211,26 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The gate rebuilt the Vita target on the branch after merging #245: exit 0.
 - **Why vita-port-kit stays for now:** it is re-vendored at the same commit as E4's compat shims, because the common headers, the host tests, the hardware wrappers and CI still include it. Its removal is #294, paths only. The worker's patch for it was never built, because the session's permission check refused the apply.
 - **Next:** #283 (video in GLES mode), then #284-#288, one area each.
+- **Next free number:** see D272.
+
+### D272. MAX draws at least 1x and grows over the 60 Hz budget wherever a draw writes no more than the last 1x draw (#271, the owner's decision of 2026-11-26)
+- **Why:** the owner said MAX means at least 1x, drawing farther wherever it can. Until now, where the 1x frame was already over the 60 Hz budget (Artisans at 15.1-16.3 ms of 14.5, D252), the limiter held 1x. That was so even though #259 measured that 2x there writes no more (host, budget off: 62-74 KB against 59-77 KB, records 7.71 M against 7.69 M).
+- **What** (`src/game/lod.c` `limit()`, `LodConfig.grow_free`, default `SPYRO_DD_FREE_DEFAULT` = 1):
+  - With a 60 Hz budget on (fixed or timed), every 1x draw becomes the reference: its bytes and the vertex-cache records the game thread made in it (`records_now()`).
+  - A draw over the budget is let through if it is the 1x draw, or if it writes no more of either than the reference. The usual growth rules then apply.
+  - A draw that writes more backs off at once, with the reference as the budget: the extra distance halves, or past 9/8 of the reference the scale drops to 1x.
+  - The reference is dropped at a new level, a new gamestate or a loaded save state.
+  - The lod line gets a `free` suffix only in windows where the rule acted. `lod_time.c` logs the mode at start-up.
+- **Measured (Vita3K, against base-20d3514):**
+  - A build with default 0 gives shots and lod lines identical to base on owner60, stone60 and toasty60.
+  - With the rule on, Artisans 6,900-7,800 and Toasty 13,500-14,100 go from 1x held to x2.00, with about as many records (−8% to +3%) and up to 3-5 KB more a draw. Stone Hill reaches x1.12-1.16.
+  - Shots differ only in those stretches: owner60 11, stone60 4, toasty60 15. The other five routes are identical.
+  - The host gives the same lod numbers.
+- **Checks:** host ctest 33/33, Vita build (also on the merged branch), noassets.
+- **Open:**
+  - The runtime key (`dd_free=` on the Vita, `--dd-free` on the host) is #295. The worker's patch for it was outside its files, and the session's permission check refused to let the worker apply it.
+  - The reference is one 1x draw and isn't refreshed while the scale stays up (in owner60 it stayed at 85 KB through 6,900-8,700).
+  - The hardware A/B (late vblanks per 300, `dd_free=1, 0, 0, 1` on the owner60 and o-toasty pads in real time) waits for #295 and the owner's yes.
+- The baseline is rebuilt after this merge, because pictures changed as intended.
 - **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
 
