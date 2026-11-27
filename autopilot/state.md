@@ -374,6 +374,13 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "af1b951ebd3dcc8c36153f3386ec406daa285141",
       "pr": 298,
       "merged_at": null
+    },
+    {
+      "pr": 300,
+      "branch": "release/phase8-d281-vc-fast-rec-7",
+      "head": "a6cf0ac3452fc638bfe1225b2dbef04c0cfd7a7d",
+      "opened": "2026-11-27",
+      "merged_at": null
     }
   ]
 }
