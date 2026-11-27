@@ -617,3 +617,4 @@ continue.
 - 2026-11-27T07:02Z shared 5, vita 8: baseline base-e603aaa (8/8 routes), last_good e603aaa; merged #296 (D274). pick offers #259; held (another session busy, #283 and #294 running).
 - 2026-11-27T07:30Z shared 5, vita 8: #294 security warning (Untrusted Code Integration) checked: path-only edits inside its Files from #251's patch, no push, no Vita, own PIDs only; let it run. Dispatched #259 attempt 2 (machine quiet).
 - 2026-11-27T07:56Z shared 5, vita 8: merged #294 (D276; D275 went to PR #290, renumbered by its session); #283 reported (stopgap header, vendoring filed as #297: the worker's vendor.sh was refused by the permission classifier); gating #283.
+- 2026-11-27T08:23Z vita 8: owner merged PRs #289, #290, #293 into develop (synced 10 commits); #283 gate in host tests; #259 attempt 2 waiting on its FNV batches and host prof-draw (Vita3K routes done); nothing dispatchable (vcache.c / #283 deps)
