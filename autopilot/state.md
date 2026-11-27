@@ -22,7 +22,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/gpu_gl.c",
         "src/platform/vita/CMakeLists.txt"
       ],
-      "agent": "ae596b6969b225d80"
+      "agent": "ae596b6969b225d80",
+      "reported": true
     },
     {
       "issue": 294,
@@ -53,7 +54,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "assets/livearea/README.md",
         "third_party/vita-port-kit/"
       ],
-      "agent": "a2b6e27067f813f6d"
+      "agent": "a2b6e27067f813f6d",
+      "reported": true
     },
     {
       "issue": 259,
@@ -359,7 +361,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 294,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-294.gate.log",
+    "started_at": "2026-11-27T07:39:37Z"
+  },
   "batch": null,
   "lanes": [
     5
