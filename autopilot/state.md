@@ -638,3 +638,4 @@ continue.
 - 2026-11-27T15:29Z hw: #259 A/B done (10 runs, all at frames=). Artisans 6600-7800 game ms: 1 12.33/12.33, 3 11.85, 5 12.06, 7 11.71 (-0.62); Toasty real time late/300 8.78 (1) vs 5.89 (7). D280; candidate gain; default change asked of the owner; hardware_pending cleared.
 - 2026-11-27T15:40Z owner: "Yes, default to 7"; merged perf/259-vc-fast-rec-default-7 (D281: the Vita's vc_fast_rec defaults to 7; host keeps 1). Vita build 0, noassets 0. #259 stays open for #272.
 - 2026-11-27T15:52Z hw: the owner asked for the newest game on the Vita; put-eboot of develop 4c8ab8b (VPK 2e5669d874c1, eboot b2fa484aa22a, read back identical; sce_sys unchanged). No route run.
+- 2026-11-27T20:05Z hw: the owner asked for the fixed build on the Vita; put-eboot of develop 5ca2261 (#301 merged; VPK 8179f9ddcabc, eboot 52f2edc4798f, read back identical; LiveArea left as installed). No route run.
