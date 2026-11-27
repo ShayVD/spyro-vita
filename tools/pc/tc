@@ -8,6 +8,8 @@
 # (colima start --vm-type vz --vz-rosetta): DOCKER_HOST picks it.
 # PC_X=1 runs the command under a virtual X display (Xvfb, Mesa's llvmpipe
 # for GL): tools/pc/xrun.sh.
+# PC_ARCH=arm64 runs it in spyro-pc-arm64 instead (tools/docker/
+# pc-arm64.Dockerfile, Linux on ARM, D250 O5), natively on Apple silicon.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 rel=${PWD#"$root"}
@@ -18,10 +20,16 @@ if [ -L "$root/disc" ]; then
 fi
 tty=()
 [ -t 0 ] && [ -t 1 ] && tty=(-it)
+image=spyro-pc
+platform=linux/amd64
+if [ "${PC_ARCH:-amd64}" = arm64 ]; then
+  image=spyro-pc-arm64
+  platform=linux/arm64
+fi
 pre=()
 if [ -n "${PC_X:-}" ]; then
   pre=(/work/tools/pc/xrun.sh)
 fi
-exec "$root/tools/docker/run.sh" --rm ${tty[@]+"${tty[@]}"} --platform linux/amd64 \
+exec "$root/tools/docker/run.sh" --rm ${tty[@]+"${tty[@]}"} --platform "$platform" \
   -e HOME=/work/build/pc-home -e XDG_DATA_HOME=/work/build/pc-home/.local/share \
-  "${mounts[@]}" -w "/work$rel" spyro-pc ${pre[@]+"${pre[@]}"} "$@"
+  "${mounts[@]}" -w "/work$rel" "$image" ${pre[@]+"${pre[@]}"} "$@"
