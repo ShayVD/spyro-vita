@@ -11,20 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 271,
-      "branch": "perf/271-draw-distance-let-max-grow-where-the",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-271",
-      "started_at": "2026-11-27T01:06:50Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/platform/vita/lod_time.c",
-        "docs/presentation.md"
-      ],
-      "agent": "adeea5a2e1b159678",
-      "reported": true
-    },
-    {
       "issue": 175,
       "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
@@ -231,6 +217,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
       "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
       "issue": 212
+    },
+    {
+      "title": "Hardware A/B for #271 (dd_free=1 vs 0): MAX grows over the 60 Hz budget where a draw writes no more than 1x",
+      "expected": "no more late vblanks per 300 with dd_free=1 in Artisans and Toasty, at x2.00 where 1x was held",
+      "issue": 271,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
     }
   ],
   "owner_decisions": [
@@ -335,11 +330,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_pending": null,
   "job": {
     "kind": "gate",
-    "issue": 271,
+    "issue": 175,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-271.gate.log",
-    "started_at": "2026-11-27T04:53:42Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-175.gate.log",
+    "started_at": "2026-11-27T05:12:47Z"
   },
   "batch": null,
   "lanes": [
@@ -615,3 +610,4 @@ continue.
 - 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
 - 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
 - 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
+- 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.

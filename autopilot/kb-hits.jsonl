@@ -5,3 +5,4 @@
 {"date": "2026-11-27", "id": "vita-vcount-16-bit-wraps", "note": "vcount header byte-identical through the move; vcount and vcount_mutant tests pass", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#251"}
 {"date": "2026-11-27", "id": "shared-hook-needs-guard-on-every-branch", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
 {"date": "2026-11-27", "id": "audio-held-level-for-vblank-paced-mixer", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#251"}
+{"date": "2026-11-27", "id": "emulator-broken-frame-check-console-shots", "outcome": "irrelevant", "phase": 8, "port": "spyro-vita", "ref": "#271"}
