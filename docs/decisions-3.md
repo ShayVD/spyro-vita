@@ -2407,5 +2407,17 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `tools/check_no_assets.sh`: passes.
   - **Not run:** the checking build (`-DSPYRO_P32_CHECK=ON`), ctest, Vita3K and hardware. The Vita binary is identical.
 
+### D280. On the Vita, `vc_fast_rec` 7 takes 0.62 ms off the Artisans game thread; the default stays 1 for now (#259, 2026-11-27)
+
+- **Context:** D278 added two same-answer cuts to the vertex cache's native record (bit 2 lean, bit 4 ahead) and kept the default at 1 until a hardware A/B. The owner said "Yes, run #259" for the prepared session (`runs/vita/issue-259-2/hw/hw-session-259-2.sh`, one VPK, SHA-1 9c6d2d063045).
+- **Result** (`hw_log.py summary`, logs `logs/hw-ap24*`, table in the run folder's `RESULTS.md`):
+  - **Artisans**, owner60 route, virtual vblanks, MAX 400, frames 6600-7800, each mode twice. Game thread ms per vblank:
+    - mode 1: 12.33 and 12.33 (the spread is 0.00 ms);
+    - mode 3 (lean): 11.85 (-0.48);
+    - mode 5 (ahead): 12.06 (-0.28);
+    - mode 7 (both): 11.71 (-0.62), and -0.79 ms in the heaviest window (13.85 to 13.07).
+  - **Toasty**, real time, one run each (no spread): 8.78 late vblanks per 300 with mode 1 against 5.89 with mode 7 over frames 10800-13200. In Artisans (frames 12000-12600) the draw distance stays at x1.00 with mode 1 and reaches x1.5 with mode 7.
+- **Decision:** the hardware shows a gain past the spread for every mode, and mode 7 is the largest. It is short of the ~0.9 ms Artisans needs for 2x on its own, so the rest is #272 (projections on core 2). Moving the default from 1 to 7 is the owner's call (D278); until then it stays 1, and `vc_fast_rec=7` in `config.txt` turns it on.
+
 - **Next free number:** take one with `autopilot.py claim-decision`.
 
