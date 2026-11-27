@@ -11,25 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 175,
-      "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
-      "started_at": "2026-11-27T03:45:41Z",
-      "files": [
-        "tools/tc",
-        "tools/host_checks.sh",
-        "tools/fast_render_ab.sh",
-        "tools/mixer_ab.sh",
-        "tools/native_draw_ab.sh",
-        "tools/pres_check_ab.sh",
-        "tools/step.sh",
-        "tools/gdb_run.sh",
-        "docs/host-build.md"
-      ],
-      "agent": "a5c39f9290a1b230e",
-      "reported": true
-    },
-    {
       "issue": 296,
       "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
@@ -329,12 +310,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "rounds_without_gain": 0,
   "hardware_pending": null,
   "job": {
-    "kind": "gate",
-    "issue": 175,
+    "kind": "baseline",
+    "issue": 0,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-175.gate.log",
-    "started_at": "2026-11-27T05:12:47Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita/runtime/autopilot/baseline-r13.log",
+    "started_at": "2026-11-27T05:26:43Z"
   },
   "batch": null,
   "lanes": [
@@ -611,3 +592,4 @@ continue.
 - 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
 - 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
 - 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.
+- 2026-11-27T05:26Z shared 5, vita 8: merged #175 (D273); rebuilding the Vita baseline at the develop head (after #271's intended picture change).
