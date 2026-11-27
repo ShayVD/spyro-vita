@@ -2355,5 +2355,14 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - The shared hardware lock path `~/.cache/vita-port-kit/hw.lock`, which Encore keeps across games.
   - Old run records in `tools/vita/fps-runs/`, and the `.gitignore` comment.
   - `tools/ps4/layout64_host_only.txt`'s `Vpk*` names (stale since they were macros), and 37 lines in `docs/`.
-- **Next free number:** take one with `autopilot.py claim-decision`.
+### D277 — the Vita's video goes through Encore's platform interface in GLES mode (#283, #251 step 2)
+- **What:** `encore_vita` is linked (`enc_vita.c` with core's `enc_common.c`, `enc_event.c`, `enc_blit.c`). `video.c` calls `enc_platform_init` with gpu=1 on the main thread before the render thread starts. `gpu_gl.c` opens `ENC_GFX_GLES` (960x544, stretch, 60 Hz, vsync) after `vglInit` and checks `core_swaps` is 0; each `vglSwapBuffers` sits between `enc_video_gpu_begin` and `enc_video_present`, so the game keeps `vglInit` and `vglSwapBuffers` and the backend paces at the display's 60 Hz. `gl_quit` closes the video. The backend's `vpk_log_*` go to `spyro.log`, which closes G14.
+- **G6:** every GL call, `vglInit` and the Encore video calls are on the render thread: no second context.
+- **Gaps:**
+  - `targets/vita/runtime/log` is not vendored yet: `CMakeLists.txt` writes a stopgap `vpk_log.h` with Encore's exact three declarations into the build folder (#297 vendors it and drops the stopgap; the worker's `vendor.sh` run was refused by the session's permission check).
+  - `enc_platform_init` also sets sceCtrl's wide analog mode, calls `vpk_touch_init` again, starts sceMotion sampling and a power-callback thread waking every 100 ms, and creates an empty `ux0:data/spyro/log/`, though only video uses Encore so far (moves to `main.c` with #284).
+  - `EncVideoConfig` cannot express the 224-of-240-line picture box; gpu=0 stays outside the interface.
+- **Checked:** Vita build exit 0 (`.text` +8 KB, `.bss` +85 KB for the backend's state); 8 Vita3K routes identical to base-e603aaa (685 shots, 0 invalid accesses); presenter lines the same apart from timing-dependent join waits; only timing counters move; host ctest 38/38; macOS native and noassets pass; gate PASS and a Vita build on the merged branch (`runs/vita/issue-283-1/`).
+- **Not checked:** hardware pacing and the extra threads on a real Vita.
 
+- **Next free number:** take one with `autopilot.py claim-decision`.
