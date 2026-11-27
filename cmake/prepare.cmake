@@ -3,6 +3,10 @@
 #   spyro_prepare(<name> <src dir> <patch dir>[;<patch dir>...] <out var>)
 # Each folder's patches in name order, the folders in the order given.
 function(spyro_prepare name src patchdirs outvar)
+  find_program(SPYRO_PATCH patch)
+  if(NOT SPYRO_PATCH)
+    message(FATAL_ERROR "patch not found: it applies patches/ to the submodule copies (install it; #264)")
+  endif()
   set(dst "${CMAKE_BINARY_DIR}/patched/${name}")
   set(patches)
   foreach(patchdir ${patchdirs})
@@ -24,10 +28,10 @@ function(spyro_prepare name src patchdirs outvar)
     file(REMOVE_RECURSE "${dst}")
     file(COPY "${src}/" DESTINATION "${dst}" PATTERN ".git" EXCLUDE PATTERN "build" EXCLUDE)
     foreach(p ${patches})
-      execute_process(COMMAND patch -p1 --forward --quiet -i "${p}"
+      execute_process(COMMAND "${SPYRO_PATCH}" -p1 --forward --quiet -i "${p}"
         WORKING_DIRECTORY "${dst}" RESULT_VARIABLE rc)
       if(NOT rc EQUAL 0)
-        message(FATAL_ERROR "patch failed: ${p}")
+        message(FATAL_ERROR "patch failed (${rc}): ${p}")
       endif()
     endforeach()
     # file(COPY) keeps the submodule's mtimes, so a changed or dropped patch

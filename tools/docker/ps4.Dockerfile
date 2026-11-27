@@ -11,11 +11,12 @@
 #   tarball's framework-dependent .NET build) runs on Ubuntu's arm64 .NET 8
 #   runtime (rolled forward from netcoreapp3.0).
 # - clang-18 and lld-18 are Ubuntu 24.04's (OpenOrbis ships no compiler);
-#   cmake, ninja and PyYAML build the game (CI's ps4 job, D246).
+#   cmake, ninja, patch and PyYAML build the game (CI's ps4 job, D246;
+#   patch applies patches/ to the submodule copies, cmake/prepare.cmake, #264).
 FROM --platform=linux/arm64 ubuntu:24.04
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      clang-18 lld-18 llvm-18 make cmake ninja-build python3 python3-yaml ca-certificates curl git file \
+      clang-18 lld-18 llvm-18 make cmake ninja-build patch python3 python3-yaml ca-certificates curl git file \
       golang-go dotnet-runtime-8.0 \
  && rm -rf /var/lib/apt/lists/*
 

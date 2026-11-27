@@ -35,7 +35,7 @@ docker build --platform linux/arm64 -t spyro-ps4 -f tools/docker/ps4.Dockerfile 
 tools/ps4/tc <command>
 ```
 
-Ubuntu 24.04 arm64 with clang-18/lld-18, the same OpenOrbis tarball, `create-fself` and `create-gp4` built for arm64 from the pinned commits, and PkgTool.Core's framework-dependent build on Ubuntu's arm64 .NET 8 runtime. `--platform` matters: a cached amd64 `ubuntu:24.04` otherwise gets used under emulation.
+Ubuntu 24.04 arm64 with clang-18/lld-18, the same OpenOrbis tarball, `create-fself` and `create-gp4` built for arm64 from the pinned commits, and PkgTool.Core's framework-dependent build on Ubuntu's arm64 .NET 8 runtime. `--platform` matters: a cached amd64 `ubuntu:24.04` otherwise gets used under emulation. The image also carries `cmake`, `ninja` and `patch` for the game build (`cmake/prepare.cmake` applies `patches/` with `patch`). After the Dockerfile changes, rebuild the local image with the same command and tag (#264: an image from before the cmake and patch lines fails with `cmake: command not found`, or `patch failed`).
 
 ## The game (P3–P4, D193, D245)
 
