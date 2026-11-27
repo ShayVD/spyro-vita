@@ -2158,3 +2158,19 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
 - **Next free number:** D266.
+
+## 2026-11-26 — PC loading-screen stutter (#280)
+
+### D268. The PC's waiting frames follow the presenter's queue, as the Vita's render thread's do (#280, 2026-11-26)
+- **Seen:** the owner's play of `Spyro.app` (D265) stuttered on the level-loading screen, with either renderer; `spyro.log` showed ~550 pictures filed per 300 vblanks there and only ~107 shown, while the vblank clock held 60 and the sound had no trims.
+- **Cause:** on the loading screen each game tick lasts one vblank, and the presenter still files two frames a tick (the in-between frame and the real one), so two a vblank. Its queue (`present.c`, QUEUE 4) fills; each new frame drops the oldest and moves the rest up a vblank (`reserve`), and the new one is due 4 vblanks ahead. The Vita's render thread applies that drop to the frames it holds (`gpu_thread.c` `rt_file`: `f->dropped`, the dues moved up), so it shows the queue's head at every vblank. `src/platform/pc/frames.c` ignored `f->dropped`: its frames kept the dues they were filed with, two per vblank, all 4 ahead, and its ring of 8 slots, reused oldest-filed first, overwrote most of them before they came due. Logged in the load (temporary logging, not kept): every commit due `count + 4`, two per vblank.
+- **Fix (`frames.c` only):** each ring slot remembers the presenter's slot it holds (`pslot`, -1 for a PS1 display post). Before a presenter frame is filed (`follow_queue`), the waiting frames (filed after the newest the main thread took, not held) follow `rt_file`: the dropped one goes, one waiting in the new frame's slot goes (the slot was filed again), and unless the frames are by time (D148, `f->fixed`) the rest are due a vblank sooner. A GPU commit with nothing captured still follows the drop. Half the loading screen's frames are still never shown: two are filed per vblank and one can be.
+- **Not changed:** `present.c` (the Vita and PS4 share it) and the Vita, whose render thread already does this; the PS4 and the headless host don't compile `frames.c`. The Vita was checked by reading the code only.
+- **Checks (macOS, `Spyro.app`, `--frames --stats 2 --pad tools/pc/routes/play.pad`; the attract demo's load at ~3,600–4,200 and New Game's at ~6,900–7,500; shown per 300 refreshes):**
+  - Before, GPU renderer: 60, 179 (attract), 104, 188 (New Game). After: 298, 290, 298, 295.
+  - Before, `--gpu 0`: 61, 159 (New Game). After: 281, 264. The software rasterizer's game-thread time swings from run to run on this Mac with other sessions running, before and after alike.
+  - Normal play unchanged (≈ 285–297 shown per 300).
+  - Linux (`build/pc-linux/spyro` in the PC image under Rosetta, Xvfb and llvmpipe, `--gpu 0`; shown / refreshes): before, the attract load 31 / 408 and 221 / 363, New Game's 56 / 380 and 193 / 399; after, 251 / 293, 228 / 265, 253 / 311, 247 / 296, the same ratio as normal play in that setup (272 / 338, 233 / 269; Xvfb's refreshes aren't a 60 Hz vsync). With the GPU renderer, llvmpipe draws only 45–91 refreshes per 300 vblanks there, which says nothing about the timing (in New Game's load: 91 refreshes, 91 new pictures).
+  - `tools/host_checks.sh`: not run; the headless host doesn't compile `src/platform/pc/`. No hardware run.
+- **Next free number:** D269.
+
