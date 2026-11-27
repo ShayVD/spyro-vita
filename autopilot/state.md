@@ -42,6 +42,17 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       ],
       "agent": "a5c39f9290a1b230e",
       "reported": true
+    },
+    {
+      "issue": 296,
+      "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
+      "started_at": "2026-11-27T05:04:36Z",
+      "files": [
+        "src/platform/common/vcache.c",
+        "src/platform/common/psx_vcache.h"
+      ],
+      "agent": "afde2755bd6a5d91f"
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
@@ -603,3 +614,4 @@ continue.
 - 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
 - 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
 - 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
+- 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
