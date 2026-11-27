@@ -11,20 +11,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 245,
-      "branch": "feat/245-wobble-fix-2d-hud-sprites-with-a-corner",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-245",
-      "started_at": "2026-11-26T22:47:15Z",
-      "files": [
-        "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/order_table.c",
-        "src/game/present.c"
-      ],
-      "agent": "a09c5c3709dd43103",
-      "reported": true
-    },
-    {
       "issue": 271,
       "branch": "perf/271-draw-distance-let-max-grow-where-the",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-271",
@@ -35,7 +21,8 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "src/platform/vita/lod_time.c",
         "docs/presentation.md"
       ],
-      "agent": "adeea5a2e1b159678"
+      "agent": "adeea5a2e1b159678",
+      "reported": true
     },
     {
       "issue": 282,
@@ -370,11 +357,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_pending": null,
   "job": {
     "kind": "gate",
-    "issue": 245,
+    "issue": 282,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-245.gate.log",
-    "started_at": "2026-11-27T02:29:18Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-282.gate.log",
+    "started_at": "2026-11-27T03:53:57Z"
   },
   "batch": null,
   "lanes": [
@@ -646,3 +633,4 @@ continue.
 - 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set
 - 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
 - 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
+- 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
