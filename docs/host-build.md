@@ -165,7 +165,7 @@ What the 64-bit text needs, and the checks for it:
 
 ## linuxa64: the offset model on ARM64 (D250, D262)
 
-`-DSPYRO_HOST=linuxa64` builds the same headless host for aarch64 Linux with clang 19, natively in the arm64 host image: no qemu, so its checks run in about a minute. ARM64 has no `__ptr32`, so it uses the offset model of `src/compat/p32.h`: every P32 slot is a 32-bit offset from `spyro_p32_base`, the image's start. The image is static and non-PIE at 0x2_0123_0000, above 4 GB and not 4 GB-aligned, as macOS arm64 places it, so a pointer cut to 32 bits instead of encoded points at nothing (the low 4 GB is reserved, as on linux64).
+`-DSPYRO_HOST=linuxa64` builds the same headless host for aarch64 Linux with clang 19, natively in the arm64 host image: no qemu, so its checks run in about a minute. ARM64 has no `__ptr32`, so it uses the offset model of `src/compat/p32.h`: every P32 slot is a 32-bit offset from `lp64_p32_base` (spyro's old name `spyro_p32_base` maps to it), the image's start. The image is static and non-PIE at 0x2_0123_0000, above 4 GB and not 4 GB-aligned, as macOS arm64 places it, so a pointer cut to 32 bits instead of encoded points at nothing (the low 4 GB is reserved, as on linux64).
 
 ```bash
 tools/tc cmake -S . -B build/linuxa64 -G Ninja -DSPYRO_HOST=linuxa64 -DCMAKE_TOOLCHAIN_FILE=cmake/linuxa64.toolchain.cmake
@@ -173,11 +173,15 @@ tools/tc cmake --build build/linuxa64 --target spyro
 BIN=build/linuxa64/src/platform/linux32/spyro tools/host_checks.sh PREFIX
 ```
 
-Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. `-DSPYRO_P32_CHECK=ON` is the checking build: an encode of a host pointer (above 4 GB, outside the image) stops with its file and line. The checks of the model: `tools/ps4/p32_offset_check.py` (every slot use through an accessor, D258) and `tools/ps4/p32_decl_check.py BUILD` (a variable or function declared as a slot or pointer in one unit and otherwise in another). New code that turns a pointer into a 32-bit integer, or back, writes `P32_ENC(p)` / `P32_DEC(i)` on the cast's operand (`(u32)P32_ENC(p)`, `(T *)P32_DEC(i)`); `tools/ps4/p32_offset_rewrite.py --casts BUILD` finds the ones missed.
+Its runs must give linux32 native-mem's traces, shots, audio and memory cards byte for byte. `-DSPYRO_P32_CHECK=ON` is the checking build: an encode of a host pointer (above 4 GB, outside the image) stops with its file and line. The checks of the model are Encore's (`third_party/encore/lp64/tools`, D279; run in the host image, `tools/tc python3 ...`, with spyro's paths as arguments):
+- `p32_offset_check.py build/linux64 --define SPYRO_P32_OFFSET=1 --overlay-preprocess 'port_overlays\.py preprocess .*? -- (.*?\.c)(?:\s|$)'`: every slot use through an accessor (D258);
+- `p32_decl_check.py BUILD` with the same `--overlay-preprocess`: a variable or function declared as a slot or pointer in one unit and otherwise in another;
+- `p32_narrow_check.py BUILD [--raw]`: 64→32-bit narrowings of values that can be addresses, and slots read as raw words (D265, D267);
+- `p32_offset_rewrite.py build/linux64 --decomp build/linux64/patched/spyro-1 --patch-dir patches/spyro-1-p32off --header p32.h --overlay-preprocess ...` routes slot uses through the accessors (O2), and with `--casts` on an offset-model build (`--host-side src/platform/linux32/low_image.c --host-side src/platform/common/arena.c`) finds the pointer/32-bit casts missed. New code that turns a pointer into a 32-bit integer, or back, writes `P32_ENC(p)` / `P32_DEC(i)` on the cast's operand (`(u32)P32_ENC(p)`, `(T *)P32_DEC(i)`).
 
 ## macos: the same host on the Mac itself (D250 O4, D265)
 
-`-DSPYRO_HOST=macos` builds linuxa64's headless host as a Mach-O program for arm64 macOS with Apple's clang, on the Mac directly (no Docker, no qemu). Its image is a PIE the kernel slides above `__PAGEZERO`'s 4 GB; the P32 base is its Mach-O header (`__mh_execute_header`), and `src/platform/common/p32_image.c` checks the image and stores the data image's offsets at start. The system's malloc stays: `__PAGEZERO` already keeps the low 4 GB empty. `--prof-draw` logs nothing there (ld64 has no `--wrap`).
+`-DSPYRO_HOST=macos` builds linuxa64's headless host as a Mach-O program for arm64 macOS with Apple's clang, on the Mac directly (no Docker, no qemu). Its image is a PIE the kernel slides above `__PAGEZERO`'s 4 GB; the P32 base is its Mach-O header (`__mh_execute_header`), and `src/platform/common/p32_image.c` (Encore's `lp64_p32_image`, D279) checks the image and stores the data image's offsets at start. The system's malloc stays: `__PAGEZERO` already keeps the low 4 GB empty. `--prof-draw` logs nothing there (ld64 has no `--wrap`).
 
 ```bash
 cmake -S . -B build/macos -G Ninja -DSPYRO_HOST=macos -DCMAKE_TOOLCHAIN_FILE=cmake/macos.toolchain.cmake \

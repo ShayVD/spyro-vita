@@ -16,8 +16,13 @@
 # 0x..."). With the build's unstripped ELF (HW_ELF in the game file, relative to the game repo; the environment's
 # wins, and with ARTIFACT= only the environment's counts, as it must be that build's ELF) v3k_where.py names each
 # site's PC and LR by the nearest function; without one the runner prints the first three dumps as they are.
+# Fail line: HW_FAIL_RE in the game file (optional, an extended regex like HW_STOP_RE) is a line the game writes when
+# the route's goal was missed; v3k_run.sh stops the run as soon as it appears (it wins over a stop line seen in the same
+# look) and the runner exits 7, so a missed goal is not mistaken for a crash (2). run.txt has result=fail_line and
+# fail_line=THE LINE. A game file without it runs as before.
 # Exit: 0 stop line, 1 setup, 2 crash, 3 hang (timeout), 4 hang line, 5 the Vita3K lock is busy (defer), 6 the stop
-# line, but Vita3K logged invalid memory accesses (with AP_GATE_INVALID_FAIL=1, the default).
+# line, but Vita3K logged invalid memory accesses (with AP_GATE_INVALID_FAIL=1, the default), 7 the fail line
+# (HW_FAIL_RE: the route's goal was missed).
 set -uo pipefail
 tools=$(cd "$(dirname "$0")" && pwd)
 cmd=${1:-}; [ $# -gt 0 ] && shift

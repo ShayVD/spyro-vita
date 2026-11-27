@@ -92,6 +92,31 @@ committed on the `autopilot` branch. The JSON block is what the tools read
         "attract_demo_pictures_per_300": 218
       },
       "result": "D264: #259 gain 0.72 ms/vblank (Artisans still 1x: 15.4 of 14.5); #232 gain +24 pictures/300 in demos; #274 short path -0.4 ms walk and join, probes no gain; MAX 400 holds 60 fps"
+    },
+    {
+      "target": "vita",
+      "date": "2026-11-27",
+      "vpk": "runtime/autopilot/runs/vita/issue-259-2/spyro-vita-259-2.vpk",
+      "sha1": "9c6d2d0630452324e14034e04d16232ade294c9b",
+      "eboot_sha1": "4adc47b71c5cc3afddac67e60ba57d8d0c18f339",
+      "commit": "bb41e76",
+      "issue": 259,
+      "runs": "logs/hw-ap24a1..a8, t1, t2",
+      "game_ms": {
+        "artisans_6600_7800": {
+          "1": 12.33,
+          "3": 11.85,
+          "5": 12.06,
+          "7": 11.71
+        }
+      },
+      "late_per_300": {
+        "toasty_10800_13200": {
+          "1": 8.78,
+          "7": 5.89
+        }
+      },
+      "owner_yes": "Yes, run #259"
     }
   ],
   "perf_candidates": [
@@ -201,9 +226,10 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "expected": "3, 5 or 7 takes ~0.9 ms off the Artisans game thread at 2x",
       "issue": 259,
       "needs": "hardware",
-      "status": "queued",
+      "status": "gain",
       "target": "vita",
-      "ab": "runs/vita/issue-259-2/hw/hw-session-259-2.sh: Artisans owner60 virtual vblanks vc_fast_rec 1,7,3,5,7,1,5,3 at MAX 400; Toasty real time 1 then 7; win = game ms below mode 1 by more than the two mode-1 runs spread"
+      "ab": "runs/vita/issue-259-2/hw/hw-session-259-2.sh: Artisans owner60 virtual vblanks vc_fast_rec 1,7,3,5,7,1,5,3 at MAX 400; Toasty real time 1 then 7; win = game ms below mode 1 by more than the two mode-1 runs spread",
+      "result": "2026-11-27 hw (logs/hw-ap24*, runs/vita/issue-259-2/hw/RESULTS.md): Artisans 6600-7800 game ms mode 1 12.33/12.33, 3 11.85 (-0.48), 5 12.06 (-0.28), 7 11.71 (-0.62; heaviest window -0.79); spread 0.00. Toasty real time 1 vs 7: late per 300 8.78 vs 5.89, lod x1.00 vs x1.5 in 12000-12600 (one run each). Short of the 0.9 ms for 2x; default change is the owner's call."
     }
   ],
   "owner_decisions": [
@@ -342,6 +368,12 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "commit": "31a47eb",
       "pr": 275,
       "merged_at": "2026-11-26T10:51:04Z"
+    },
+    {
+      "branch": "release/phase8-round13-encore-d278",
+      "commit": "af1b951ebd3dcc8c36153f3386ec406daa285141",
+      "pr": 298,
+      "merged_at": null
     }
   ]
 }
@@ -594,3 +626,8 @@ continue.
 - 2026-11-27T09:48Z vita 8: #259 attempt 2 reported (vc_fast_rec bits 2 lean and 4 ahead, same answers, default unchanged; hardware A/B package ready, not run); gating #259.
 - 2026-11-27T09:55Z vita 8: merged #259 attempt 2 (D278; default unchanged, hardware A/B queued, #259 open with needs-owner). All remaining work done per the owner's plan: stopping for retro and release PR.
 - 2026-11-27T09:57Z retro 8 (round 13): +4 entries, 1 bumped, 0 signatures, branch retro/spyro-vita-phase-8c (Encore draft PR #151); kit tasks encore#149, encore#150; no new promotion issue.
+- 2026-11-27T10:05Z stop on the owner's plan: #283 (D277) and #259 (D278) merged; retro 8c is Encore draft PR #151; release PR #298 to main (host ctest 38/38 on 266a2b0). Loop stopped; resume with #284-#288, #295, #297, #272, #247, #225, #219 and the two hardware A/Bs (#259, #271).
+- 2026-11-27T14:51Z hw: the owner said "Yes, run #259"; running runs/vita/issue-259-2/hw/hw-session-259-2.sh as prepared (VPK 9c6d2d063045, 10 runs, ~1 h); hw_check ready.
+- 2026-11-27T15:29Z hw: #259 A/B done (10 runs, all at frames=). Artisans 6600-7800 game ms: 1 12.33/12.33, 3 11.85, 5 12.06, 7 11.71 (-0.62); Toasty real time late/300 8.78 (1) vs 5.89 (7). D280; candidate gain; default change asked of the owner; hardware_pending cleared.
+- 2026-11-27T15:40Z owner: "Yes, default to 7"; merged perf/259-vc-fast-rec-default-7 (D281: the Vita's vc_fast_rec defaults to 7; host keeps 1). Vita build 0, noassets 0. #259 stays open for #272.
+- 2026-11-27T15:52Z hw: the owner asked for the newest game on the Vita; put-eboot of develop 4c8ab8b (VPK 2e5669d874c1, eboot b2fa484aa22a, read back identical; sce_sys unchanged). No route run.

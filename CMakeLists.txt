@@ -184,7 +184,7 @@ elseif(SPYRO_HOST STREQUAL "linuxa64")
   # image's start, and not 4 GB-aligned (macOS slides its image), so a
   # pointer cut to 32 bits isn't its offset either: a missed P32_ENC shows.
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS} -static -Wl,-Ttext-segment=0x201230000
-      -Wl,--defsym=spyro_p32_base=__executable_start)
+      -Wl,--defsym=lp64_p32_base=__executable_start)
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS})
 elseif(SPYRO_HOST STREQUAL "macos")
   # macos (D250 O4): a PIE, as every arm64 macOS program; the kernel slides
@@ -199,11 +199,11 @@ elseif(SPYRO_HOST STREQUAL "pc")
   set(SPYRO_LINK_FLAGS ${SPYRO_ARCH_FLAGS})
   if(SPYRO_PC_TARGET MATCHES "aarch64")
     # Linux on ARM (D250 O5): non-PIE above 4 GB at linuxa64's address, the
-    # P32 base the image's start, but dynamic (src/platform/pc/low.c
+    # P32 base the image's start, but dynamic (Encore's lp64_low_image_dyn.c
     # reserves the low 4 GB before any library loads). -z separate-code: GNU
     # ld for aarch64 otherwise puts the whole image in one RWX segment at
     # this address; with it, R, R+X and R+W segments as on x86-64.
-    list(APPEND SPYRO_LINK_FLAGS -Wl,-Ttext-segment=0x201230000 -Wl,--defsym=spyro_p32_base=__executable_start
+    list(APPEND SPYRO_LINK_FLAGS -Wl,-Ttext-segment=0x201230000 -Wl,--defsym=lp64_p32_base=__executable_start
          -Wl,-z,separate-code)
   endif()
   set(SPYRO_RELOC_LD_FLAGS ${SPYRO_ARCH_FLAGS} ${SPYRO_PC_RELOC_LD_FLAGS})

@@ -282,13 +282,14 @@
  *                       table's rp array (D221), 2 (default) in the entry
  *                       itself (#259; the same pictures)
  *       vc_fast_rec=N   with persp or subpixel, the logic draw's native
- *                       record, bits: 1 (default) its find and maths
- *                       inlined (0: called, as before #259); 2 without the
- *                       cost model's counts (vc.div, vc.probe, vc.lines and
- *                       the vc.rec ones of the game thread stay 0); 4 each
- *                       record done one late, after the next prefetched its
- *                       entry (#259 attempt 2); any nonzero includes 1. The
- *                       same pictures in each
+ *                       record, bits: 1 its find and maths inlined (0:
+ *                       called, as before #259); 2 without the cost model's
+ *                       counts (vc.div, vc.probe, vc.lines and the vc.rec
+ *                       ones of the game thread stay 0); 4 each record done
+ *                       one late, after the next prefetched its entry (#259
+ *                       attempt 2); any nonzero includes 1. Default 7 (D281:
+ *                       0.62 ms off Artisans' game thread on hardware, D280);
+ *                       1 for the counts. The same pictures in each
  *       found_fast=N    with persp or subpixel, the walk's lookup of a
  *                       polygon whose vertices are all found: 2 (default)
  *                       on its short path with each vertex's first probe
@@ -447,7 +448,7 @@ extern int g_vita_pres_prio; /* pres_thread.c, pres_prio= (#195) */
 static int s_vc_lazy = 0;    /* vc_lazy= (#195): psx_vcache_set_lazy (#193); off since #198 */
 static int s_vc_lazy_logic = 1; /* vc_lazy_logic= (#196): psx_vcache_set_lazy_logic (D188) */
 static int s_vc_repeat = 2;     /* vc_repeat= (#228, #259): psx_vcache_set_repeat */
-static int s_vc_fast_rec = 1;   /* vc_fast_rec= (#259): psx_vcache_set_fast_record */
+static int s_vc_fast_rec = 7;   /* vc_fast_rec= (#259, D281): psx_vcache_set_fast_record */
 static int s_found_fast = 2;    /* found_fast= (#274): psx_vcache_set_found_fast (D226) */
 void nd_init(void (*log)(const char *fmt, ...));
 

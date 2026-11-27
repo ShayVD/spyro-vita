@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# The port autopilot's gate runner for the PC (pc-linux, pc-windows): one route of the game's native build, run
+# headless, behind the one contract every target's runner keeps (playbooks/port-autopilot/targets.md):
+#   ap_gate info --target pc-linux
+#   ap_gate run  --target pc-linux --game tools/pc/linux.game OUT TIMEOUT [KEY=VALUE]...
+# The run file (--game, sourced by bash) holds the game's settings:
+#   PC_EXE       the executable, relative to the repo root (ARTIFACT=<file> runs another build instead)
+#   PC_STOP_RE   the log line of a finished run (frames=N reached, say); required
+#   PC_HANG_RE   a log line that means a hang (optional)
+#   PC_LOG       the log the game writes, relative to PC_HOME; empty: its stdout and stderr
+#   PC_SHOTS     the folder of the game's shots, relative to PC_HOME (default shots)
+#   PC_RUN=(..)  a command prefix: the repo's container wrapper with Xvfb on Linux, Wine for pc-windows (optional)
+#   PC_ARGS=(..) arguments before the keys (optional); PC_HOME_FLAG: the flag that names the user folder (optional)
+# Each KEY=VALUE becomes `--KEY VALUE` (the PC build's command-line config), a bare WORD `--WORD`; PAD=<file> adds
+# `--pad <file>`. Every run gets a fresh user folder, PC_HOME = OUT/home (also XDG_DATA_HOME and HOME for the
+# game), so runs never share saves or config. One run at a time per repo and target: a lock folder with the
+# holder's PID in AP_GATE_LOCKS (default: runtime/autopilot in the repo's main checkout, so every worktree's gate
+# shares it), waited on up to PC_LOCK_WAIT s (1800).
+# OUT gets: run.log, the shots (*.png), stdout.txt, run.txt (result, seconds, artifact, SHA-1, target).
+# Exit: 0 stop line, 1 setup, 2 ended without the stop line (crash), 3 timeout (hang), 4 hang line, 5 lock busy.
+# A PC gate run is not a hardware run: it needs no approval (playbooks/port-autopilot/hardware.md).
+set -uo pipefail
+cmd=${1:-}; [ $# -gt 0 ] && shift
+target=pc-linux game=
+while [ $# -gt 0 ]; do
+  case $1 in
+    --target) target=$2; shift 2 ;;
+    --game) game=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
+case $cmd in
+  info)
+    art=exe; [ "$target" = pc-windows ] && art=exe.win
+    printf '{"target": "%s", "status": "ready", "artifact": "%s", "log": "run.log", "runs_on": "headless native"}\n' \
+      "$target" "$art"
+    exit 0 ;;
+  run) ;;
+  *) echo "usage: ap_gate info --target T | run --target T --game FILE OUT TIMEOUT [KEY=VALUE]..." >&2; exit 1 ;;
+esac
+setup() { echo "ap_gate: $*" >&2; exit 1; }
+out=${1:-}; timeout=${2:-}
+[ -n "$out" ] && [[ $timeout =~ ^[0-9]+$ ]] || setup "run needs OUT and TIMEOUT"
+shift 2
+[ -n "$game" ] && [ -f "$game" ] || setup "--game must name the game's run file (tools/pc/<os>.game)"
+game=$(cd "$(dirname "$game")" && pwd)/$(basename "$game")
+PC_EXE='' PC_STOP_RE='' PC_HANG_RE='' PC_LOG='' PC_SHOTS=shots PC_HOME_FLAG=''
+PC_RUN=() PC_ARGS=()
+# shellcheck disable=SC1090
+. "$game"
+[ -n "$PC_STOP_RE" ] || setup "PC_STOP_RE missing in $game"
+root=${GAME_ROOT:-$(git -C "$(dirname "$game")" rev-parse --show-toplevel 2>/dev/null || dirname "$game")}
+exe=${ARTIFACT:-}
+if [ -z "$exe" ]; then
+  [ -n "$PC_EXE" ] || setup "PC_EXE missing in $game"
+  case $PC_EXE in /*) exe=$PC_EXE ;; *) exe=$root/$PC_EXE ;; esac
+fi
+[ -f "$exe" ] || setup "no executable at $exe"
+poll=${PC_POLL:-1}
+[[ $poll =~ ^[1-9][0-9]*$ ]] || setup "PC_POLL must be a whole number of seconds"
+mkdir -p "$out"
+out=$(cd "$out" && pwd)
+[ ! -e "$out/home" ] || setup "$out already holds a run (use a new OUT)"
+
+# the lock: one run per repo and target, in the main checkout (a worktree's git common dir is the main .git)
+main=$root
+common=$(git -C "$root" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+[ -n "$common" ] && [ "$(basename "$common")" = .git ] && main=$(dirname "$common")
+locks=${AP_GATE_LOCKS:-$main/runtime/autopilot}
+mkdir -p "$locks"
+lock=$locks/ap_gate-$target.lock
+old() { [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]; } # last changed over a minute ago
+# take over a lock left by OWNER (a dead PID, or "" for none) only under the .reap lock, and only while it still is
+# that one, so a lock another waiter has just taken over is left alone (as v3k_run.sh does)
+reap() {
+  mkdir "$lock.reap" 2>/dev/null || { old "$lock.reap" && rmdir "$lock.reap" 2>/dev/null; return 1; }
+  local r=1
+  if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$1" ] && { [ -n "$1" ] || old "$lock"; }; then
+    rm -rf "$lock.stale.$$"
+    mv "$lock" "$lock.stale.$$" 2>/dev/null && rm -rf "$lock.stale.$$" && r=0
+  fi
+  rmdir "$lock.reap" 2>/dev/null || true
+  return $r
+}
+waited=0
+until mkdir "$lock" 2>/dev/null; do
+  [ -e "$lock" ] || setup "cannot create $lock"
+  p=$(cat "$lock/pid" 2>/dev/null || true)
+  if [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null; then reap "$p" && continue; fi
+  if [ -z "$p" ] && old "$lock"; then reap "" && continue; fi
+  if [ "$waited" -ge "${PC_LOCK_WAIT:-1800}" ]; then
+    echo "ap_gate: the $target lock is held by PID ${p:-?} ($lock)" >&2; exit 5
+  fi
+  sleep "$poll"; waited=$((waited + poll))
+done
+echo $$ > "$lock/pid"
+pid=
+cleanup() {
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+    kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+  rm -rf "$lock"
+}
+trap 'cleanup; exit 143' TERM INT HUP
+trap cleanup EXIT
+
+home=$out/home
+mkdir -p "$home"
+args=(${PC_ARGS[@]+"${PC_ARGS[@]}"})
+[ -z "$PC_HOME_FLAG" ] || args+=("$PC_HOME_FLAG" "$home")
+for kv in "$@"; do
+  case $kv in
+    *=*) args+=("--${kv%%=*}" "${kv#*=}") ;;
+    *) args+=("--$kv") ;;
+  esac
+done
+if [ -n "${PAD:-}" ]; then
+  [ -f "$PAD" ] || setup "no pad script at $PAD"
+  cp "$PAD" "$out/pad.txt"; args+=(--pad "$out/pad.txt")
+fi
+printf '%s\n' "$@" > "$out/config.txt"
+log=$out/stdout.txt
+[ -z "$PC_LOG" ] || log=$home/$PC_LOG
+( cd "$home" && HOME=$home XDG_DATA_HOME=$home PC_HOME=$home \
+    exec ${PC_RUN[@]+"${PC_RUN[@]}"} "$exe" ${args[@]+"${args[@]}"} ) > "$out/stdout.txt" 2>&1 &
+pid=$!
+result=timeout t=0
+while :; do
+  if grep -Eq -e "$PC_STOP_RE" "$log" 2>/dev/null; then result=stop; break; fi
+  if [ -n "$PC_HANG_RE" ] && grep -Eq -e "$PC_HANG_RE" "$log" 2>/dev/null; then result=hang_line; break; fi
+  if ! kill -0 "$pid" 2>/dev/null; then
+    if grep -Eq -e "$PC_STOP_RE" "$log" 2>/dev/null; then result=stop; else result=exited; fi
+    break
+  fi
+  [ "$t" -ge "$timeout" ] && break
+  sleep "$poll"; t=$((t + poll))
+done
+if [ "$result" = stop ]; then # let the game finish writing and exit by itself
+  for _ in 1 2 3 4 5 6; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+fi
+cleanup
+pid=
+cp "$log" "$out/run.log" 2>/dev/null || echo "ap_gate: no log at $log"
+[ -d "$home/$PC_SHOTS" ] && { cp "$home/$PC_SHOTS/"*.png "$out/" 2>/dev/null || true; }
+sha=$( (sha1sum "$exe" 2>/dev/null || shasum "$exe") | cut -d' ' -f1)
+printf 'result=%s\nseconds=%s\nartifact=%s\nartifact_sha1=%s\ntarget=%s\n' "$result" "$t" "$exe" "$sha" "$target" \
+  > "$out/run.txt"
+pngs=("$out"/*.png); [ -e "${pngs[0]}" ] || pngs=()
+echo "ap_gate: $target $result after ${t}s, ${#pngs[@]} pictures in $out"
+case $result in
+  stop) exit 0 ;;
+  exited) exit 2 ;;
+  timeout) exit 3 ;;
+  hang_line) exit 4 ;;
+esac

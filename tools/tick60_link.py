@@ -22,6 +22,7 @@ IN.o with:
 The report lists the counts and every name in each group.
 """
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -100,7 +101,7 @@ def main():
     ap.add_argument("--entry", action="append", required=True)
     ap.add_argument("--report")
     ap.add_argument("--macho", action="store_true",
-                    help="a Mach-O object (macOS, D250 O4): nm -m, tools/macho_syms.py")
+                    help="a Mach-O object (macOS, D250 O4): nm -m, Encore's macho_syms.py")
     ap.add_argument("inp")
     ap.add_argument("out")
     a = ap.parse_args()
@@ -142,7 +143,8 @@ def main():
     with open(loc, "w") as f:
         f.write("\n".join(funcs) + "\n")
     if a.macho:
-        cmd = [sys.executable, __file__.replace("tick60_link.py", "macho_syms.py"),
+        cmd = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "third_party", "encore",
+                                            "lp64", "tools", "macho_syms.py"),  # Encore's (D279)
                "--localize-symbols", loc]
     else:
         cmd = [a.objcopy, "--localize-symbols=" + loc]

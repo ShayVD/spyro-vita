@@ -244,6 +244,26 @@ class ShotsCmp(unittest.TestCase):
         self.assertEqual(self.run_cmp()[0], 1)
         self.assertEqual(self.run_cmp("--tol", "2")[0], 0)
 
+    def one_colour(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            code = shots_cmp.main(["--one-colour", *args])
+        return code, out.getvalue()
+
+    def test_one_colour(self):
+        png(self.new / "black.png", 6, 4, lambda x, y: (0, 0, 0), filt=4)
+        png(self.new / "near.png", 6, 4, lambda x, y: (3, 0, 2), ctype=6)
+        png(self.new / "spot.png", 6, 4, lambda x, y: (90, 0, 0) if (x, y) == (5, 3) else (0, 0, 0))
+        self.assertEqual(self.one_colour("0,0,0", str(self.new / "black.png"))[0], 0)
+        self.assertEqual(self.one_colour("1,0,0", str(self.new / "black.png"))[0], 1)  # tol 0 by default
+        self.assertEqual(self.one_colour("0,0,0", str(self.new / "near.png"))[0], 1)
+        self.assertEqual(self.one_colour("0,0,0", str(self.new / "near.png"), "--tol", "4")[0], 0)
+        code, out = self.one_colour("0,0,0", str(self.new / "spot.png"), "--tol", "4")
+        self.assertEqual(code, 1)
+        self.assertIn("(5,3) is (90, 0, 0)", out)
+        (self.new / "bad.png").write_bytes(b"not a png")
+        self.assertEqual(self.one_colour("0,0,0", str(self.new / "bad.png"))[0], 1)
+        self.assertEqual(self.one_colour("0,0,0", str(self.new / "none.png"))[0], 1)
+
     def test_missing_and_size(self):
         png(self.new / "600.png", 8, 10, lambda x, y: (0, 0, 0))
         code, out = self.run_cmp()

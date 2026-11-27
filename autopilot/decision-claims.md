@@ -17,3 +17,5 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D277 #283 Vita video through Encore's platform interface (2026-11-27T09:42:23Z)
 - D278 #259 vc_fast_rec lean and ahead record modes (2026-11-27T09:54:30Z)
 - D279 re-vendor Encore's ARM64 offset model (Encore #148) (2026-11-27T09:54:46Z)
+- D280 259 (2026-11-27T15:28:33Z)
+- D281 259 (2026-11-27T15:36:37Z)
