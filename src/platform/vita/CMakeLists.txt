@@ -58,14 +58,50 @@ add_executable(spyro_vita ${VITA_SRCS}
 if(SPYRO_UNSAFE)
   target_compile_definitions(spyro_vita PRIVATE SPYRO_UNSAFE=1)
 endif()
+# Encore's platform interface on the Vita (#251): its Vita backend
+# (enc_vita.c) and the core files it calls, as encore_vita with plain flags,
+# as Encore's own build_conformance.sh builds it (the PC's encore_pc, D247).
+# So far the game takes its video from it, in GLES mode (#283: video.c,
+# gpu_gl.c). enc_co.c isn't built (coroutines: unused, and its ucontext isn't
+# vendored). The backend logs through three vpk_log calls that video.c
+# implements into the game's own log; their header is Encore's
+# targets/vita/runtime/log/vpk_log.h once that is vendored, until then the
+# same three declarations written here.
+set(ENCORE_CORE "${CMAKE_SOURCE_DIR}/third_party/encore/core")
+set(ENC_VITA_LOG "${ENCORE_VITA}/runtime/log")
+if(NOT EXISTS "${ENC_VITA_LOG}/vpk_log.h")
+  set(ENC_VITA_LOG "${CMAKE_CURRENT_BINARY_DIR}/encore_log")
+  file(CONFIGURE OUTPUT "${ENC_VITA_LOG}/vpk_log.h" @ONLY CONTENT [=[
+/* Written by src/platform/vita/CMakeLists.txt: the calls of Encore's
+ * targets/vita/runtime/log/vpk_log.h that enc_vita.c makes (that directory
+ * isn't vendored yet), with its signatures. src/platform/vita/video.c
+ * defines them. */
+#ifndef VPK_LOG_H
+#define VPK_LOG_H
+int vpk_log_open(const char *path, const char *first_line);
+void vpk_log_write(const void *buf, int n);
+int vpk_log_flush(void);
+#endif
+]=])
+endif()
+add_library(encore_vita STATIC
+  "${ENCORE_VITA}/encore/enc_vita.c"
+  "${ENCORE_CORE}/src/enc_common.c"
+  "${ENCORE_CORE}/src/enc_event.c"
+  "${ENCORE_CORE}/src/enc_blit.c")
+target_include_directories(encore_vita PUBLIC "${ENCORE_CORE}/include" "${ENC_VITA_LOG}"
+  PRIVATE "${ENCORE_VITA}/runtime/audioout" "${ENCORE_VITA}/runtime/touch"
+  "${ENCORE_VITA}/runtime/vcount")
+target_compile_options(encore_vita PRIVATE -std=gnu99 -O2 -Wall -Wextra -Wno-unused-parameter)
 target_include_directories(spyro_vita PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/src/platform/common" "${LINUX32_DIR}"
   "${ENCORE_VITA}/runtime/vcount")
 target_compile_options(spyro_vita PRIVATE ${SPYRO_OPT_FLAGS} ${SPYRO_GUARD_FLAGS}
   -Wall -Wno-unused-function)
 # Link list from duke-nukem-advance-tc-vita's Common.mak (D7): vitasdk's SDL2
-# and the vitaGL stack for the GPU renderer (D35).
-target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common
+# and the vitaGL stack for the GPU renderer (D35); Encore's backend before
+# the stubs it calls.
+target_link_libraries(spyro_vita PRIVATE spyro_game spyro_platform_common encore_vita
   SDL2 vitaGL vitashark SceShaccCgExt mathneon taihen_stub SceShaccCg_stub
   SceDisplay_stub SceCtrl_stub SceAudio_stub SceAudioIn_stub SceSysmodule_stub
   SceGxm_stub SceCommonDialog_stub SceAppMgr_stub SceAppUtil_stub SceTouch_stub

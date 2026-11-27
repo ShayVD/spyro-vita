@@ -53,6 +53,7 @@
 #include "psx_lean.h"
 #include "psx_vcache.h"
 #include "gpu_rt.h"
+#include "encore/platform.h"
 /* the GL calls below count themselves (issue #160, D165) */
 #define VITA_PC_GL
 #include "vita_pc.h"
@@ -624,6 +625,70 @@ static void sample_scene(void) {
 
 static int s_vgl_up; /* vglInitExtended has run */
 
+/* Encore's GLES mode (#251 step 2, #283; ENC_GFX_GLES in encore/platform.h):
+ * vitaGL keeps the GPU, the display queue and the swap (core_swaps 0: this
+ * file calls vglSwapBuffers between enc_video_gpu_begin and _present), and
+ * the backend paces. Its source is the 960x544 picture this file composes
+ * (the 4:3 box of the 224 drawn lines and the 16:9 frame are its own, D67),
+ * so the box is the whole screen. Its rate is the display's 60 Hz, never
+ * the game's (50 Hz for PAL at its own timing): the render thread shows each
+ * frame at its due display vblank (present_due=1, D112, D148), as the PC
+ * opens at the display's rate so its backend never paces (G11). At 60 Hz
+ * the backend's pacing is the display's vblank, which vitaGL's swap already
+ * waits for (vglWaitVblankStart below): no wait of its own. Every video
+ * call comes from the thread that runs vitaGL (the render thread, or the
+ * game thread with render_thread=0), one GL context there and no second
+ * one (the PC's G6). */
+static int s_enc_open, s_enc_errs;
+
+static void enc_err(const char *call, int r) {
+  if (s_enc_errs++ < 4)
+    vita_log("gpu: %s: %s (Encore's GLES mode, #283)", call, enc_error_name(r));
+}
+
+static int enc_open(void) {
+  EncVideoConfig cfg = {0};
+  EncGpu g;
+  int r;
+  cfg.source_width = SCREEN_W;
+  cfg.source_height = SCREEN_H;
+  cfg.refresh_hz = 60;
+  cfg.aspect = ENC_ASPECT_STRETCH;
+  cfg.vsync = 1;
+  cfg.gfx = ENC_GFX_GLES;
+  r = enc_video_open(&cfg);
+  if (r == ENC_OK)
+    r = enc_video_gpu(&g);
+  if (r != ENC_OK) {
+    enc_err("enc_video_open", r);
+    return -1;
+  }
+  if (g.core_swaps) { /* the GLES mode's contract: the game swaps */
+    vita_log("gpu: Encore's GLES mode swaps itself (core_swaps %d): not what vitaGL needs",
+             g.core_swaps);
+    return -1;
+  }
+  s_enc_open = 1;
+  vita_log("gpu: video through Encore's platform interface: GLES %d.%d, vitaGL swaps "
+           "(core_swaps 0), the backend paces at the display's 60 Hz (#283)", g.major, g.minor);
+  return 0;
+}
+
+/* before a picture is drawn into the default framebuffer */
+static void enc_begin(void) {
+  EncGpuFrame f;
+  int r = enc_video_gpu_begin(&f);
+  if (r != ENC_OK)
+    enc_err("enc_video_gpu_begin", r);
+}
+
+/* after its vglSwapBuffers */
+static void enc_present(void) {
+  int r = enc_video_gpu_present();
+  if (r != ENC_OK)
+    enc_err("enc_video_gpu_present", r);
+}
+
 /* Before the app's own exit (vita_gpu_stop, D120): no scene left on the GPU
  * and no flip in the display queue, so nothing of vitaGL's is under way
  * when the process goes. */
@@ -632,6 +697,9 @@ void gl_quit(void) {
     return;
   glFinish();
   sceGxmDisplayQueueFinish();
+  if (s_enc_open)
+    enc_video_close();
+  s_enc_open = 0;
 }
 
 /* every swap goes through here */
@@ -653,6 +721,7 @@ static void swap(void) {
   vglSwapBuffers(GL_FALSE);
   vita_gpu_meter_display(0);
   gs_forget(); /* vitaGL's own work at the swap (D171) */
+  enc_present();
 }
 
 /* ---- shaders (GLSL ES 1.00, run through vitaGL's translator) ---- */
@@ -3896,6 +3965,8 @@ int gl_gpu_init(void) {
     vita_log("gpu: vitaGL clamped the resolution to the display's");
   s_vgl_up = 1;
   vglWaitVblankStart(GL_TRUE);
+  if (enc_open() != 0)
+    return -1;
   vita_log("gpu: vitaGL %s, %s; pools KB: RAM %u, VRAM %u, phycont %u",
            (const char *)glGetString(GL_VERSION), (const char *)glGetString(GL_RENDERER),
            (unsigned)(vglMemTotal(VGL_MEM_RAM) >> 10), (unsigned)(vglMemTotal(VGL_MEM_VRAM) >> 10),
@@ -3943,12 +4014,14 @@ int gl_gpu_init(void) {
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_CULL_FACE);
   glDisable(GL_STENCIL_TEST);
+  enc_begin();
   bind_fbo(0);
   glViewport(0, 0, SCREEN_W, SCREEN_H);
   glClearColor(0, 0, 0, 1);
   glClear(GL_COLOR_BUFFER_BIT);
   vglSwapBuffers(GL_FALSE);
   gs_forget(); /* D171 */
+  enc_present();
   if (present_only) {
     vita_log("gpu: the GPU renderer's shaders don't compile: using the software renderer, "
              "shown through vitaGL (as gpu=0)");
@@ -4422,6 +4495,7 @@ static void present_display(void) {
  * hd_shot: also a 960x544 PNG for that vblank (shot_hd=1). */
 void gl_present(int slot, int wide, int hd_shot) {
   batch_flush();
+  enc_begin();
   gprof_enter(PROF_PRESENT);
   dynres_picture(s_ovl != NULL); /* the scale the next frames' targets take (D75) */
   if (slot >= 0)
