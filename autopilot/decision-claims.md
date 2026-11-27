@@ -14,3 +14,4 @@ before its entry is in the decisions log. One line a number: the number, what it
 - D274 #296 vcache prepared for the core-2 helper (2026-11-27T07:01:32Z)
 - D275 #290 PC options menu (#279), renumbered from D266 (2026-11-27T07:45:51Z)
 - D276 #294 vita-port-kit removed (2026-11-27T07:54:33Z)
+- D277 #283 Vita video through Encore's platform interface (2026-11-27T09:42:23Z)
