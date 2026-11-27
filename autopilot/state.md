@@ -25,28 +25,6 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "reported": true
     },
     {
-      "issue": 251,
-      "branch": "feat/251-the-vita-build-on-encore-s-platform",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-251",
-      "started_at": "2026-11-27T01:07:09Z",
-      "files": [
-        "third_party/encore/",
-        "third_party/vita-port-kit/",
-        "src/platform/vita/CMakeLists.txt",
-        "cmake/platform_common.cmake",
-        "src/platform/vita/audio.c",
-        "src/platform/vita/picture.c",
-        "src/platform/vita/vblank.c",
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/pad.c",
-        "src/platform/common/cdimage.c",
-        "src/platform/common/menu_opts.c",
-        "src/platform/common/pbp.c"
-      ],
-      "agent": "aedc22d51c6092653",
-      "reported": true
-    },
-    {
       "issue": 175,
       "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
       "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
@@ -346,11 +324,11 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "hardware_pending": null,
   "job": {
     "kind": "gate",
-    "issue": 251,
+    "issue": 271,
     "step": 1,
     "pid": 0,
-    "out": "/Users/shayvandam/Projects/spyro-vita-issue-251.gate.log",
-    "started_at": "2026-11-27T04:23:44Z"
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-271.gate.log",
+    "started_at": "2026-11-27T04:53:42Z"
   },
   "batch": null,
   "lanes": [
@@ -624,3 +602,4 @@ continue.
 - 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
 - 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
 - 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
+- 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
