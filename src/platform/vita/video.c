@@ -5,7 +5,12 @@
  * streaming texture and SDL2's own GXM renderer scales it 4:3 into the
  * 960x544 screen. SDL2's renderer uses precompiled shaders, so nothing needs
  * libshacccg.suprx. With gpu=1 the GPU renderer (gpu_gl.c) owns the screen
- * through vitaGL instead, and no SDL window exists. */
+ * through vitaGL instead, and no SDL window exists.
+ *
+ * With gpu=1 the video goes through Encore's platform interface (#251 step
+ * 2, #283): Encore's Vita backend (third_party/encore/targets/vita/encore/
+ * enc_vita.c) is started here, and gpu_gl.c opens its GLES mode once vitaGL
+ * is up. gpu=0's SDL renderer stays as it was. */
 #include "vita.h"
 
 #include <SDL2/SDL.h>
@@ -13,8 +18,43 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "encore/platform.h"
+#include "vpk_log.h"
 #include "psx_gpu.h" /* currentDispEnv, g_GPUDisabledState */
 #include "../../game/present.h"
+
+/* Encore's Vita backend logs through these three (enc_vita.c's enc_log):
+ * here they write into this log (log.c), so there is one log, not the
+ * backend's own ux0:data/spyro/log/spyro.log beside it (the PC's G14), and
+ * stdout and stderr stay log.c's (vpk_log.c's open would take them). */
+int vpk_log_open(const char *path, const char *first_line) {
+  (void)path;
+  (void)first_line;
+  return 0;
+}
+
+void vpk_log_write(const void *buf, int n) {
+  vita_log("%.*s", n, (const char *)buf); /* a line ending \n, which vita_log drops */
+}
+
+int vpk_log_flush(void) {
+  vita_log_flush();
+  return 1;
+}
+
+/* Encore's backend for gpu=1, on the main thread before the render thread
+ * starts. It also starts the backend's own input side (sceCtrl's wide
+ * analog mode, the touch panels, sceMotion) and its power callback's
+ * thread, which nothing here reads yet (#284-#288 move those areas). */
+static int enc_up(void) {
+  static const EncPlatformConfig cfg = {"spyro", "Spyro Vita", 0, NULL};
+  int r = enc_platform_init(&cfg);
+  if (r != ENC_OK) {
+    vita_log("video: Encore's platform interface didn't start: %s", enc_error_name(r));
+    return -1;
+  }
+  return 0;
+}
 
 uint8_t *host_display_rgb(int *pw, int *ph); /* linux32/png.c */
 
@@ -34,7 +74,7 @@ static SDL_Texture *s_tex;
 
 int vita_video_init(void) {
   if (g_vita_gpu) {
-    int r = vita_gpu_init();
+    int r = enc_up() == 0 ? vita_gpu_init() : -1;
     if (r < 0)
       return -1;
     g_vita_gl = 1;
