@@ -2178,7 +2178,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - That run found the fullscreen race (above): ON then OFF 67 ms apart left the window fullscreen (2940×1838). After the fix the same keys, twice, leave it windowed (2560×1440).
 - A `pad=` script (SELECT, then SELECT+START at vblank 606, the bits a gamepad's Back + Start give) opens the menu, and the game reads `0000` while they are held. No script closes a menu the pad opened, so that run was stopped.
 - Not checked: Esc, F1, Backspace/Tab + Enter and a real gamepad on the live window. No one was at the Mac to approve driving its keyboard; the owner's try of `Spyro.app` checks them. They go through the same `pc_menu_filter` and in-menu loop as the scripted runs.
-- PC Linux and Windows: @@LW@@
+- PC Linux and Windows: both build in the `spyro-pc` Docker image (clang 19, MinGW-w64), no warning in `src/platform/pc`. The Linux build ran under Xvfb (llvmpipe, `gpu=0`, 640×480): `menu_test=700 menu_keys=down,right,down,down,down,right,circle` turned WIDESCREEN off and FILTER to nearest (the GPU rows hidden with the software renderer, the panel scaled down to the window); the next start read `widescreen=0` and `filter=0`, with the file's own comment line kept. The Windows build was not run.
 - The Vita, PS4, linux32 and macos/linuxa64 headless builds compile no changed file (`src/platform/pc` is added only for `SPYRO_HOST=pc`, and the PS4's `menu_game.c`, which the PC now also compiles, is unchanged), so their binaries and `tools/host_checks.sh` are unchanged by construction; they were not rebuilt. `tools/check_no_assets.sh` passes. No hardware run.
 - **Next free number:** D267.
 
