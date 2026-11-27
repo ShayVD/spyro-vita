@@ -1,0 +1,12 @@
+# A key script for v3k_run.sh / ap_gate KEYS=FILE (macOS): Vita inputs posted to the run's own Vita3K as keyboard
+# events, which its keyboard map (config.yml keyboard-*) turns into the Vita's buttons and left stick. The run needs
+# no pad= line (no PAD=): the game then reads its controller, the path a pad script bypasses. Steps: v3k_keys.swift.
+log crt0 120          # wait for the game's log to show it booted (a line of your game's; ICU regex, \s for a space)
+wait 2
+press start 0.8       # held 0.8 s (about 45 vblanks)
+press cross 0.8
+press select+l1 0.8   # Select first, then L: a combination
+down lstick-up        # the left stick held up ...
+wait 1.5
+up lstick-up          # ... and let go
+press key:KeyX        # a key by Vita3K's name, whatever it maps to

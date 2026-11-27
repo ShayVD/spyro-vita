@@ -79,6 +79,7 @@ class Game(threading.Thread):
         every = int(opts.get("shot_every", "0"))
         shots = {int(x) for x in opts.get("shot", "").split(",") if x}
         hang = int(opts.get("hang_test", "0").split(",")[0] or 0)
+        os.makedirs(os.path.dirname(os.path.join(d, LOG)), exist_ok=True)  # HW_LOG may be in a folder (log/game.log)
         log = open(os.path.join(d, LOG), "w", buffering=1)
         log.write("[     0] vita mock: config %s\n" % sorted(opts))
         v = 0

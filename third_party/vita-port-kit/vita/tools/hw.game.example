@@ -1,4 +1,4 @@
-# A game's settings for vita-port-kit's hw_run.sh / hw_check.sh / hw_ftp.py / hw_mock.py, kept in the game repo
+# A game's settings for Encore's hw_run.sh / hw_check.sh / hw_ftp.py / hw_mock.py, kept in the game repo
 # (tools/vita/hw.game) and named by HW_GAME (the game's wrappers set it). Sourced by bash; hw_ftp.py and
 # hw_mock.py read its plain KEY=VALUE lines, so keep those simple (no expansions).
 HW_TITLE_ID=GAME00001
@@ -27,7 +27,8 @@ HW_SAVE_DIR=save
 # optional: the unstripped ELF of the build HW_VPK packs (before vita-elf-create), relative to the game repo's
 # root; copied next to each crash dump a run fetches (OUT_DIR/psp2core-X.elf) with its SHA-1 in hw-run.txt, so the
 # dump is read against the same build. With VPK= pointing at another build, give that build's ELF as HW_ELF= too.
-# The environment's HW_ELF wins over this line.
+# The environment's HW_ELF wins over this line. ap_gate (Vita3K) names each invalid access's and guest exception's
+# PC and LR from it (v3k_where.py); with ARTIFACT= it reads only the environment's HW_ELF.
 HW_ELF=
 # 1: fetch the Vita's eboot.bin before the run (OUT_DIR/eboot-before.bin) and put it back when the run ends,
 # however it ends, with a read-back (only eboot.bin: a run that installed the whole app leaves its sce_sys/).

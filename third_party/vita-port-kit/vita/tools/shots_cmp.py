@@ -3,7 +3,7 @@
   shots_cmp.py BASE_DIR NEW_DIR [--glob '*.png'] [--max-diff 0.0] [--tol 0] [--edge 0]
 A picture passes when its bytes are identical, or when the fraction of pixels whose R, G or B differs by more than
 TOL (inside a border of EDGE pixels left out) is at most MAX_DIFF. Vita3K window captures differ run to run at the
-edges (vita/docs/gotchas.md 7): give --edge, and set --max-diff from two runs of the same build. Reads 8-bit RGB and
+edges (targets/vita/docs/gotchas.md 7): give --edge, and set --max-diff from two runs of the same build. Reads 8-bit RGB and
 RGBA PNGs, not interlaced (what Vita3K captures and the ports' shots write). Standard library only.
 Exit 0 when every BASE picture passes; 1 otherwise (a picture over the limit, a size change, a missing picture,
 a picture that cannot be decoded, an edge that leaves no pixels, or no BASE picture matching the glob).

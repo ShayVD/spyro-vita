@@ -2,7 +2,7 @@
 # livearea_png.py on synthetic art: RGB and RGBA PNGs written with every row filter are converted to 8-bit indexed
 # at the right sizes and pass `check`; a good VPK passes `vpk --livearea`; a wrong size, an RGB PNG in a VPK and a
 # VPK without its eboot.bin are refused. Needs python3 only.
-#   vita/tools/test/livearea_png_test.sh
+#   targets/vita/tools/test/livearea_png_test.sh
 set -euo pipefail
 tools=$(cd "$(dirname "$0")/.." && pwd)
 w=$(mktemp -d "${TMPDIR:-/tmp}/livearea_png_test.XXXXXX")

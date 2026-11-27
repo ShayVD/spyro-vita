@@ -16,6 +16,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(dir, mode) _mkdir(dir) /* Windows' mkdir takes no mode */
+#endif
 #include "encore/discimage.h"
 
 static int fails;
@@ -406,6 +410,9 @@ int main(int argc, char **argv) {
   snprintf(p, sizeof p, "%s/t2.bin", dir), one(p, 2352, 24, 2, 0);
   snprintf(p, sizeof p, "%s/t2p.bin", dir), one(p, 2352, 24, 2, 3);
   snprintf(p, sizeof p, "%s/t2s.img", dir), one(p, 2448, 24, 2, 0);
+#ifdef DISCIMAGE_NO_BIG /* the Vita's memory card: exFAT has no sparse files, so this would write 3.3 GB */
+  printf("discimage_test: skip the image past 3 GiB (DISCIMAGE_NO_BIG)\n");
+#else
   { /* past 3 GiB: the .iso again with one more sector at LBA 1,600,000, the gap sparse */
     unsigned char big[2048];
     snprintf(p, sizeof p, "%s/big.iso", dir);
@@ -420,6 +427,7 @@ int main(int argc, char **argv) {
     enc_dimg_close(&d);
     remove(p);
   }
+#endif
   snprintf(p, sizeof p, "%s/t2.bin", dir), source_tests(p);
   snprintf(p, sizeof p, "%s/t.chd", dir);
   f = fopen(p, "wb"), fwrite("MComprHD", 1, 8, f), fclose(f);
