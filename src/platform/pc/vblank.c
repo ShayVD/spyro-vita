@@ -150,7 +150,7 @@ static void vblank(void) {
 void psx_platform_vsync(void) {
   int n, late;
   unsigned long long t0, t1;
-  if (pc_menu_service()) { /* the options menu paused the game (D266): count again, no catch-up */
+  if (pc_menu_service()) { /* the options menu paused the game (D275): count again, no catch-up */
     psx_clock_resync();
     s_t_last = 0;
   }

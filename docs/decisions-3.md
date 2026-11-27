@@ -2159,7 +2159,7 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
 - **Next free number:** D266.
 
-### D266. The options menu on PC (Linux, Windows, macOS): the Vita's and PS4's menu, opened by SELECT+START, Esc or F1, drawn by the GL presenter, its rows config.txt's keys (#279, 2026-11-26)
+### D275. The options menu on PC (Linux, Windows, macOS): the Vita's and PS4's menu, opened by SELECT+START, Esc or F1, drawn by the GL presenter, its rows config.txt's keys (#279, 2026-11-26)
 
 **Context.** The Vita and PS4 have the in-game options menu (D30, D45, D245). The PC builds had none: settings came only from `config.txt` and the command line, and the owner found no way to change one while playing `Spyro.app` (D265).
 

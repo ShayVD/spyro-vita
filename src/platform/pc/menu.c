@@ -1,4 +1,4 @@
-/* The port's options menu on PC (decisions D266; the PS4's menu.c, itself
+/* The port's options menu on PC (decisions D275; the PS4's menu.c, itself
  * the Vita's, D30, D45, D245): hold SELECT and press START on a gamepad
  * (Back + Start) or on the keyboard (Backspace or Tab, then Enter), or press
  * Esc or F1, or a gamepad's guide button. The game stops where it is (the

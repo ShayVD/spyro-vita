@@ -24,7 +24,7 @@
  * read by gaps.c (G7): the backend's own keyboard map on pad 0 is a
  * different one, so its bits are taken back out of pad 0. F11 and Alt+Enter
  * are the backend's (fullscreen). Esc or F1, or a gamepad's guide button,
- * opens and closes the options menu (menu.c, D266), as SELECT+START does. */
+ * opens and closes the options menu (menu.c, D275), as SELECT+START does. */
 #include "pc.h"
 #include "gaps.h"
 #include "host.h"

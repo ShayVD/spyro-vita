@@ -37,7 +37,7 @@ endif()
 add_executable(spyro MACOSX_BUNDLE ${PC_SRCS} ${PC_ENCORE_SRCS}
   "${LINUX32_DIR}/gpu_soft.c" "${LINUX32_DIR}/png.c" "${LINUX32_DIR}/log.c"
   "${LINUX32_DIR}/savestate_host.c"
-  # the options menu's GAME rows (skipping the logos, the cheats; D266): the
+  # the options menu's GAME rows (skipping the logos, the cheats; D275): the
   # PS4's, plain C over src/game/cheats_port.c, shared as they are
   "${CMAKE_SOURCE_DIR}/src/platform/ps4/menu_game.c")
 set_target_properties(spyro PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")

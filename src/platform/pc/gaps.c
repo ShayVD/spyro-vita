@@ -189,7 +189,7 @@ uint32_t pc_gap_backend_keyboard_bits(void) {
   return m;
 }
 
-/* ---- G15, G16: the options menu's key, fullscreen and vsync (D266) ------------------------------------------------ */
+/* ---- G15, G16: the options menu's key, fullscreen and vsync (D275) ------------------------------------------------ */
 
 int pc_gap_menu_key(void) {
   const bool *keys = SDL_GetKeyboardState(NULL);

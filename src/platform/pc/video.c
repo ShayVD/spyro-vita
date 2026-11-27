@@ -14,7 +14,7 @@
  * freely. The title, the minimum size, fullscreen at start, the idle mouse
  * pointer and the game thread's shared context are gaps.c's (G4, G6).
  *
- * The options menu (menu.c, D266) hands an RGB panel (pc_video_overlay),
+ * The options menu (menu.c, D275) hands an RGB panel (pc_video_overlay),
  * drawn in the middle over the picture, at the largest whole multiple of
  * its size that fits (or smaller, scaled, in a small window). Its FULLSCREEN
  * and VSYNC rows are applied here, on the main thread (pc_video_want). */

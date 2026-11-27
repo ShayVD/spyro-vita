@@ -65,7 +65,7 @@ PcOpts g_pc_opts = {.stats = 1, .analog = 1, .vsync = 1, .filter = 1, .widescree
                     .interp = 1, .win_w = 1280, .win_h = 720,
                     .gpu = 1, .persp = 1, .subpixel = 1, /* D243 */
                     .draw_distance = 100, .free_camera = 1, .cam_invert_x = 1, .cam_invert_y = 1,
-                    .cam_speed = 100, .cam_recentre = 1}; /* the menu's rows (D266) */
+                    .cam_speed = 100, .cam_recentre = 1}; /* the menu's rows (D275) */
 char g_pc_user_dir[1024];
 static char s_disc_dir[1024];
 volatile int g_pc_quit;
@@ -110,7 +110,7 @@ static void parse_list(const char *v, int *out, int *n) {
 
 /* config.txt in the user folder, then the command line (which wins):
  * key=value lines, '#' comments; --key value or --key on the command line.
- * The options menu's rows (menu.c, D266) take the keys not named here. */
+ * The options menu's rows (menu.c, D275) take the keys not named here. */
 static int set_opt(const char *key, const char *v) {
   int n = atoi(v);
   if (!strcmp(key, "frames"))
@@ -314,7 +314,7 @@ static int game_thread(void *arg) {
   g_present.widescreen = g_pc_opts.widescreen != 0;
   g_present.interp = g_present.interp_mobys = g_present.interp_anim = g_pc_opts.interp != 0;
   g_present.stats = g_pc_opts.stats > 1;
-  pc_menu_init(); /* the menu's rows: draw distance, 60 Hz logic, the GAME rows (D266) */
+  pc_menu_init(); /* the menu's rows: draw distance, 60 Hz logic, the GAME rows (D275) */
   psx_clock_set_due_display(1); /* frames shown at their due display vblank (D148) */
   pc_frames_install_capture();
   host_log_flush();

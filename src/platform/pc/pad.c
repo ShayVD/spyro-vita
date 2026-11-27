@@ -101,7 +101,7 @@ static unsigned char *s_buf[2];
 static uint16_t s_last;
 static int s_settle = 4; /* vblanks of centred sticks first (the game calibrates on its first read) */
 
-/* the CONTROLS rows (menu.c, D266) into the game's camera controls: the
+/* the CONTROLS rows (menu.c, D275) into the game's camera controls: the
  * Vita's defaults (vita.h) unless config.txt or the menu says otherwise */
 void pc_pad_controls_apply(void) {
   static int analog = -1;

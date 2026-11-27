@@ -1,4 +1,4 @@
-/* The options menu's PICTURE and CONTROLS rows on PC (decisions D266; the
+/* The options menu's PICTURE and CONTROLS rows on PC (decisions D275; the
  * PS4's present_ps4.c, picture_ps4.c and pad.c rows, the Vita's D30, D39,
  * D45, D47, D130, D162): config.txt's keys, which main.c's set_opt reads as
  * before, as menu rows.
