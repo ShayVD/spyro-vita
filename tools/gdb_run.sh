@@ -5,6 +5,12 @@
 set -euo pipefail
 cmds="$1"; shift; [ "$1" = "--" ] && shift
 bin=build/linux32/src/platform/linux32/spyro
+# Issue #175: on colima's sshfs mount the binary can lose its execute bit after
+# the link, and qemu-i386 refuses it; give it back here, inside the container,
+# right before running (up to 5 tries), with one line when it had to.
+n=0
+while [ -f "$bin" ] && [ ! -x "$bin" ] && [ $n -lt 5 ]; do n=$((n + 1)); chmod +x "$bin" 2>/dev/null || sleep 1; done
+[ $n -eq 0 ] || echo "restored execute bit: $bin" >&2
 qemu-i386 -g 1234 "$bin" "$@" > /tmp/gdb_run.out 2>&1 &
 sleep 1
 args=(-batch -ex "set pagination off" -ex "set sysroot /usr/i686-linux-gnu" -ex "file $bin"
