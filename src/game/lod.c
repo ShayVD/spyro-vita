@@ -156,6 +156,7 @@ static struct {
   unsigned draws, cuts, near_full, near_cuts, env_cuts, moby_cuts, budget_cuts, budget_held;
   unsigned free_ok, free_cuts; /* dd_free (#271): draws over the budget let
                                   through, and back-offs past the 1x draw */
+  unsigned long long recs; /* ... and the records of the draws limit() saw */
   unsigned long long used, k, extra;
   unsigned used_max, cap, k_min, near_max, records_max, sector_max, after_env_max;
 } s_st;
@@ -491,6 +492,7 @@ static void limit(int used, int cap, int work, int budget, int near, int k, unsi
   int room = (budget <= 0 || work < budget - budget / 8) &&
              (s_k < LOD_TWO || near < NEAR_GROW); /* past 2x: the near list too */
   if (g_lod.grow_free && budget > 0) {
+    s_st.recs += recs;
     if (k <= LOD_ONE) { /* the reference: the last 1x draw */
       s_ref_bytes = work;
       s_ref_recs = recs;
@@ -668,11 +670,13 @@ void port_lod_report(char *out, unsigned len) {
    * through or backed off past the 1x draw, so dd_free=0's lines (and a
    * window with no draw over the budget) are as before. F of the draws were
    * over the budget and let through (no more than the last 1x draw wrote),
-   * P backed off past it; then that reference's bytes and records. About 75
-   * bytes: the line stays under 600 (budget_report). */
+   * P backed off past it; then that reference's bytes and records, and the
+   * window's records a draw. About 70 bytes: the line stays under 600
+   * (budget_report). */
   if ((s_st.free_ok || s_st.free_cuts) && n > 0 && (unsigned)n + 1 < len)
-    snprintf(out + n, len - (unsigned)n, "; free %u, past 1x %u (1x %u KB, %u records)",
-             s_st.free_ok, s_st.free_cuts, (unsigned)s_ref_bytes / 1024, s_ref_recs);
+    snprintf(out + n, len - (unsigned)n, "; free %u, past 1x %u (1x %u KB %u rec; %u rec/draw)",
+             s_st.free_ok, s_st.free_cuts, (unsigned)s_ref_bytes / 1024, s_ref_recs,
+             (unsigned)(s_st.recs / d));
   memset(&s_st, 0, sizeof s_st);
   memset(&s_bt, 0, sizeof s_bt);
 }
