@@ -56,6 +56,8 @@ const char *pc_low_report(void);    /* the same: what lies where */
 
 #if defined(__APPLE__)
 #define STACK_ALIGN 16384 /* pthread_attr_setstack wants macOS's 16 KB pages */
+#elif defined(__aarch64__)
+#define STACK_ALIGN 65536 /* Linux on ARM: a kernel's page may be 4, 16 or 64 KB (D250 O5) */
 #else
 #define STACK_ALIGN 4096
 #endif
@@ -85,7 +87,7 @@ void pc_exit(int code) {
 }
 
 #if SPYRO_P32_OFFSET
-/* macOS (D250 O4): the offset model, within 4 GB above the base */
+/* macOS and Linux on ARM (D250 O4, O5): the offset model, within 4 GB above the base */
 #include "p32_image.h"
 static int low(const void *p, size_t len) { return p32_within(p, len); }
 #else

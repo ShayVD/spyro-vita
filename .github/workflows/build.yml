@@ -176,6 +176,43 @@ jobs:
           path: build/pc-win/spyro.exe
           if-no-files-found: error
 
+  # The PC build for Linux on ARM (docs/pc-build.md, D250 O5): the arm64
+  # image on an arm64 runner, the offset model, and the same start without a
+  # disc as the x86-64 build's: the image's checks pass, SDL opens a window
+  # with a GL 3.3 context (llvmpipe), and the game stops for the missing disc.
+  pc-arm64:
+    name: PC (Linux aarch64)
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - name: Build the PC arm64 image
+        run: docker build --platform linux/arm64 -t spyro-pc-arm64 -f tools/docker/pc-arm64.Dockerfile tools/docker
+      - name: Build for Linux aarch64
+        run: |
+          docker run --rm -v "$PWD:/work" -w /work spyro-pc-arm64 sh -ec '
+            cmake -S . -B build/pc-linux-arm64 -G Ninja -DSPYRO_HOST=pc \
+              -DCMAKE_TOOLCHAIN_FILE=cmake/pc-linux-arm64.toolchain.cmake
+            cmake --build build/pc-linux-arm64'
+      - name: Linux aarch64 starts, opens a GL 3.3 window, and stops for the missing disc
+        run: |
+          set +e
+          docker run --rm -v "$PWD:/work" -w /work -e HOME=/work/build/pc-home spyro-pc-arm64 sh -c '
+            mkdir -p build/no-disc
+            tools/pc/xrun.sh build/pc-linux-arm64/spyro --disc build/no-disc --frames 120' > pc-smoke.log 2>&1
+          rc=$?
+          set -e
+          cat pc-smoke.log
+          test $rc -eq 1
+          grep -q "video: x11, llvmpipe" pc-smoke.log
+          grep -q "No Spyro the Dragon disc data was found" pc-smoke.log
+      - uses: actions/upload-artifact@v7
+        with:
+          name: spyro-pc-linux-arm64
+          path: build/pc-linux-arm64/spyro
+          if-no-files-found: error
+
   # The Windows build on Windows: it loads at its fixed base, the host's
   # memory (heap, a fresh mapping, a stack) lands below 2 GB as a program
   # that isn't large-address-aware should, SDL opens a window with a GL 3.3 context (Mesa's llvmpipe
