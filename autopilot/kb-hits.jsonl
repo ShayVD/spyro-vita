@@ -9,3 +9,5 @@
 {"date": "2026-11-27", "id": "colima-sshfs-loses-ld-execute-bit", "note": "re-check right before running, inside the container, with link_exec.sh's 5-try loop", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
 {"date": "2026-11-27", "id": "colima-sshfs-no-chown-stale-attrs", "note": "tc checks inside the container, not only from the Mac", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#175"}
 {"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "`--strict` per-polygon FNV from clean objects on 11 host pairs, every polygon identical", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#296"}
+{"date": "2026-11-27", "id": "ps1-wobble-fix-name-screen-points-by-projection", "note": "kept every projection's record in place and in order (pend_flush before every reader), so no found point changes", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#259"}
+{"date": "2026-11-27", "id": "same-answers-hash-per-polygon", "note": "the gate was FNV per polygon --strict on 30 pairs from clean objects", "outcome": "used", "phase": 8, "port": "spyro-vita", "ref": "#259"}
