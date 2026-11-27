@@ -2157,4 +2157,80 @@ Runs in `runtime/autopilot/runs/merge-base` (main `a9db797` plus D166's two `vdm
   - Byte identity, each target built from develop's 99756fb and from O4 in the same build directories: Vita `spyro_vita.velf` and PS4 `spyro.elf` every loaded section identical (pinned date and commit, D249); linux32, linux32 native-mem, linux64, PC Linux and PC Windows identical but the `__TIME__` strings and the build-id that hashes them.
   - `p32_decl_check.py build/macos`: no mismatch in 695 names and 3,781 functions. `p32_narrow_check.py`: read (above). `tools/check_no_assets.sh`: passes. No hardware run.
 - **Not done here:** the owner's play of the PC route on the M-series Mac (D250's last O4 gate); a notarised or Developer-ID-signed app (an ad-hoc one asks Gatekeeper on first start); an Intel Mac build; Encore's `lp64/runtime/low_image` for macOS (D250 planned the runtime there; it lives in `p32_image.c` here and can move when Encore takes the offset model).
-- **Next free number:** D266.
+- **Next free number:** D266 (taken by D265's successors below; see `autopilot/decision-claims.md`).
+
+### D269. The vertex cache skips the HUD OT's polygons: 2D primitives made by hand stay at their integer places (#245, 2026-11-27)
+- **Why:** D230 found that 2D primitives the game's C links into the HUD OT (`func_800168DC`) can have a corner on the same integer pixel as a 3D projection behind them. The vertex cache then gave that corner the projection's sub-pixel place, a nudge of under a pixel that changed as the scene moved. Seen on the title menu's borders (`TitlescreenDrawSprite`, corner (256,137)) and the screen copy (`func_8001A40C`, corner (128,8)).
+- **How:**
+  - `present.c` `port_present_note_2d` and `pres_note_2d`, which `func_800168DC` already calls, note each HUD primitive into the vertex-cache table of the frame being recorded (`psx_vcache_note_hud`, `pres_vcache_note_hud`; in 4:3 too). `Table` gains `hud_gen`, `nhud`, `hud_lo/hi` and `hud[512]`, sorted by address.
+  - The narrowed copies' pools are registered (`psx_vcache_hud_pool`).
+  - `psx_vcache_poly` asks `hud_poly()` before any lookup: a pool range check, the frame's span, then a binary search; a walk-copy address maps back to the game's.
+  - A HUD polygon is answered as one nothing finds (`VREF_POLY`, side `{0, 0, 1}`). It takes no hand-over or `frac_hand`, and is counted on a new `vcache HUD:` line instead of "outside".
+- **Measured:**
+  - Host FNV per polygon on 11 pairs (S, Si, P, Pi, Pf, Pfi, S60, T, O60, D, D60), base d7f5213: every changed polygon is a HUD-OT one (362 on S, 725 on Si, 3 on D). They are the named borders and screen copy, plus the title menu's boxes, a full-width fade and a demo text box. No other polygon changed.
+  - Host "outside the renderers" goes to 0 on every route (S 18,126 to 0). The other vcache lines are unchanged apart from slightly fewer kept projections worked out.
+  - Vita3K shots identical to base-20d3514 on all 8 routes. vc.misses falls (owner60 -71%, demo60 -99.5%). stone60's timing counters are within two develop-head runs' spread.
+- **Checks:** host ctest 33/33, Vita build, noassets. The gate's 3,600 s host-test step timed out after its ctest passed (Docker queue waits), so the coordinator judged it a pass. Logs: `runtime/autopilot/runs/vita/issue-245-1` (local).
+- **Next free number:** see D270.
+
+### D270. The vertex cache's kept projections move to a helper on core 2 under a per-entry claim; the design and its race test come first (#282, 2026-11-27)
+- **Why:**
+  - Artisans at 60 Hz is held at 1x: the game thread takes 15.4 ms of the 14.5 ms budget (D264).
+  - It works out 91% of its projections at once (D261), at 1.28-1.40 µs each on hardware (session 9, ap23a1 against ap23x1).
+  - The walk on core 1 is too busy to take more, and core 2 has about 6.5 ms a vblank free (D261, unverified: the render line's "busy" includes the swap's wait).
+  - The owner asked for the design before the code (2026-11-26).
+- **What:** the design is `docs/vcache-core2.md`; the implementation is #272.
+  - **Scope:** only the logic draw's tables, and only in lazy frames. The helper takes kept projections only, in store order (`LzRec.pad` becomes `ent`).
+  - **Claim:** a 16-bit claim word per entry plus `cov[e]`, in `Lazy` (`Entry` stays 40 bytes). The game thread publishes `pub` with a release store every 32 keeps.
+  - **Taking and handing back:** the helper takes an entry with a relaxed CAS below the `pub` it acquired, and hands it back with a release store. Owners take entries back through `lz_collect` with an acquire CAS.
+  - **No waiting:** the game thread's keeps and at-once records never wait.
+  - **Atomics:** `nfar` and `nlfar` become relaxed fetch_adds, with a `far_full` counter.
+  - **Before a table records again:** a seq_cst stop/inside handshake.
+  - **When the helper is behind:** past a 512-record backlog, the game thread works out at once, as today.
+  - **Memory order:** checked against arm-vita-eabi-gcc 15.2 and clang i686.
+  - **Switch:** `vc_helper=0/1/2` (0 = today's code and the default until a hardware A/B; 2 = keep everything with the helper idle, to measure a kept projection's cost).
+- **Checked:** `tests/vcache/test_vcache_helper.c`: three threads over Artisans-shaped frames.
+  - Host ctest 38/38 (`vcache_helper_race`, `vcache_helper_race_stress`; 1.85 M projections).
+  - Every projection is worked out exactly once, and every entry and log place equals the single-thread answer.
+  - Three mutants are caught.
+  - ThreadSanitizer is clean on native arm64 (the i686 toolchain can't link it). Native stress: 12.3 M projections.
+- **Found:** `vc_lazy_logic=2` keeps no more than the default (125,184 against 125,290 per 300 vblanks), so D264's result says nothing about keeping everything.
+- **Expected:** 1.5-3 ms a vblank off the game thread, where 0.9 ms is needed. Measure `vc_helper=2` on hardware first.
+- **Next free number:** see D271.
+
+### D271. The Vita build takes its Encore modules from `third_party/encore` (#251 step 1, 2026-11-27)
+- **What:**
+  - Encore 098d34b4 is vendored with `tools/vendor.sh --dir third_party/encore`, beside the PC's paths. The new paths are `targets/vita/{encore,cmake,tools}` and `targets/vita/runtime/{audioout,touch,perfcount,vcount}`; `VENDORED` lists all 11.
+  - The `vpk_` runtime modules (audio out, touch, perfcount, vcount) come from `targets/vita/runtime`.
+  - The sound ring, the disc image layer, the menu and its panel come from `core/src/enc_*.c` (`cmake/platform_common.cmake`). `cdimage.c` and `pbp.c` call `enc_dimg_*`.
+  - `VpkApp.cmake` and `livearea_png.py` come from `targets/vita`.
+- **Same code apart from perfcount:**
+  - The eboot's `.text`, `.rodata` and `.data` sizes are unchanged, and 394 of 397 objects have the same code.
+  - The only module change is Encore's `VPK_PC_MAX` raised from 32 to 64 (from kh1-vita): perfcount's tables grow by 1 KB of `.bss`, which moves the `.bss` addresses after them.
+  - All 8 Vita3K routes give shots identical to base-20d3514. Host ctest 33/33; the macOS native and pc-linux builds pass.
+  - The gate rebuilt the Vita target on the branch after merging #245: exit 0.
+- **Why vita-port-kit stays for now:** it is re-vendored at the same commit as E4's compat shims, because the common headers, the host tests, the hardware wrappers and CI still include it. Its removal is #294, paths only. The worker's patch for it was never built, because the session's permission check refused the apply.
+- **Next:** #283 (video in GLES mode), then #284-#288, one area each.
+- **Next free number:** see D272.
+
+### D272. MAX draws at least 1x and grows over the 60 Hz budget wherever a draw writes no more than the last 1x draw (#271, the owner's decision of 2026-11-26)
+- **Why:** the owner said MAX means at least 1x, drawing farther wherever it can. Until now, where the 1x frame was already over the 60 Hz budget (Artisans at 15.1-16.3 ms of 14.5, D252), the limiter held 1x. That was so even though #259 measured that 2x there writes no more (host, budget off: 62-74 KB against 59-77 KB, records 7.71 M against 7.69 M).
+- **What** (`src/game/lod.c` `limit()`, `LodConfig.grow_free`, default `SPYRO_DD_FREE_DEFAULT` = 1):
+  - With a 60 Hz budget on (fixed or timed), every 1x draw becomes the reference: its bytes and the vertex-cache records the game thread made in it (`records_now()`).
+  - A draw over the budget is let through if it is the 1x draw, or if it writes no more of either than the reference. The usual growth rules then apply.
+  - A draw that writes more backs off at once, with the reference as the budget: the extra distance halves, or past 9/8 of the reference the scale drops to 1x.
+  - The reference is dropped at a new level, a new gamestate or a loaded save state.
+  - The lod line gets a `free` suffix only in windows where the rule acted. `lod_time.c` logs the mode at start-up.
+- **Measured (Vita3K, against base-20d3514):**
+  - A build with default 0 gives shots and lod lines identical to base on owner60, stone60 and toasty60.
+  - With the rule on, Artisans 6,900-7,800 and Toasty 13,500-14,100 go from 1x held to x2.00, with about as many records (−8% to +3%) and up to 3-5 KB more a draw. Stone Hill reaches x1.12-1.16.
+  - Shots differ only in those stretches: owner60 11, stone60 4, toasty60 15. The other five routes are identical.
+  - The host gives the same lod numbers.
+- **Checks:** host ctest 33/33, Vita build (also on the merged branch), noassets.
+- **Open:**
+  - The runtime key (`dd_free=` on the Vita, `--dd-free` on the host) is #295. The worker's patch for it was outside its files, and the session's permission check refused to let the worker apply it.
+  - The reference is one 1x draw and isn't refreshed while the scale stays up (in owner60 it stayed at 85 KB through 6,900-8,700).
+  - The hardware A/B (late vblanks per 300, `dd_free=1, 0, 0, 1` on the owner60 and o-toasty pads in real time) waits for #295 and the owner's yes.
+- The baseline is rebuilt after this merge, because pictures changed as intended.
+- **Next free number:** take one with `autopilot.py claim-decision` (D266-D268 are taken by open PRs #289/#290, #292, #293).
+

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check a bounded presentation capture (vita/runtime/presenttrace) against its launch's log and report the CPU
+"""Check a bounded presentation capture (targets/vita/runtime/presenttrace) against its launch's log and report the CPU
 swap-return cadence: nearest-rank p50 / p95 / p99 / max of the picture interval and pictures per second.
 
-  vita/tools/present_trace.py present-trace.csv --log RUN/game.log [--min-frame N] [--max-frame N]
+  targets/vita/tools/present_trace.py present-trace.csv --log RUN/game.log [--min-frame N] [--max-frame N]
                               [--prefix vpk-presenttrace] [--output report.json]
 
 Refuses a CSV without its `# end` footer, one whose export line is not in this log (an old CSV cannot pass for a new

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install a game's VPK in Vita3K, run it with a config.txt made from the arguments until the game writes its stop
 # line, Vita3K ends, or a timeout, and collect the log, shots and save folder:
-#   HW_GAME=tools/vita/hw.game vita/tools/v3k_run.sh OUT_DIR [TIMEOUT_S] [config line]...
+#   HW_GAME=tools/vita/hw.game targets/vita/tools/v3k_run.sh OUT_DIR [TIMEOUT_S] [config line]...
 # The game's settings are the hw.game the hardware tools read (hw.game.example): HW_DATA, HW_LOG, HW_STOP_RE,
 # HW_HANG_RE, HW_VPK, HW_PAD_NAME, HW_SAVE_DIR, HW_TIMEOUT. An optional hook in it, v3k_config_base, prints the
 # run's first config.txt lines (default: realtime=0, unless REALTIME=1). The game repo's root is GAME_ROOT, else
@@ -9,6 +9,12 @@
 # PAD=FILE plays a pad script (copied to HW_DATA/HW_PAD_NAME, pad= added); SAVE=DIR starts the save folder from a
 # copy; VPK=FILE runs another build; CAPTURE=1 grabs the Vita3K window (macOS) at each hold.req the game writes,
 # as OUT_DIR/win-V.png, answering hold.ack (the game's shot_hold protocol, spyro-vita docs/vita-testing.md).
+# KEYS=FILE (macOS) plays a key script into this run's Vita3K as keyboard events (v3k_keys.swift: wait, log RE,
+# press cross, press select+l1, down/up lstick-up), which Vita3K's keyboard map turns into buttons and sticks: the
+# real controller path, which PAD= bypasses (use one or the other). The script is checked before the lock; the
+# events go only to the PID this script started, once its arguments show -w VPK; Vita3K comes to the front once.
+# Its steps go to OUT_DIR/keys.log, its exit to v3k-run.txt (keys=0 played, 1 a bad script or no Accessibility
+# permission, 2 Vita3K ended first, 3 a log step timed out, stopped: the run ended first). Elsewhere: exit 1.
 # VITA3K (the binary), V3K_FS (Vita3K's fs folder), V3K_CONFIG (its config.yml; a copy at log level VITA3K_LOG,
 # default 4 = ERROR, goes to OUT_DIR), V3K_LOCK_WAIT (s, default 1800), V3K_POLL (s, default 2).
 # The data folder is shared with the owner's own Vita3K use, and the run leaves it as it found it, apart from the
@@ -25,7 +31,7 @@
 # two waiters never both take it. After the stop line Vita3K gets about 3 s to exit by itself. Vita3K is stopped and
 # reaped however the script ends (only SIGKILL can leave it). OUT_DIR/v3k-run.txt: result, seconds, VPK, SHA-1.
 # Exit: 0 the stop line; 2 Vita3K ended without it (a crash); 3 the timeout (a hang); 4 HW_HANG_RE seen; 1 setup.
-# Vita3K is not a Vita: its timing is not evidence (vita/docs/gotchas.md 24).
+# Vita3K is not a Vita: its timing is not evidence (targets/vita/docs/gotchas.md 24).
 # From spyro-vita tools/vita/vita3k_run.sh @ bb62f38, the game's paths and names made settings and the result an
 # exit code; DISC= and GRAB= stay spyro-vita's.
 set -euo pipefail
@@ -61,12 +67,40 @@ mkdir -p "$data" "$out"
 orig="$out/.orig"
 [ ! -e "$orig" ] || { echo "v3k_run: $orig holds the owner's files from a killed run: move them back to $data first"; exit 1; }
 
+keys=
+if [ -n "${KEYS:-}" ]; then # checked (and the injector built) before the lock: a bad script never waits for it
+  [ "$(uname -s)" = Darwin ] || { echo "v3k_run: KEYS= posts macOS keyboard events: macOS only (use PAD= here)"; exit 1; }
+  [ -f "$KEYS" ] || { echo "v3k_run: no key script at $KEYS"; exit 1; }
+  keys="${TMPDIR:-/tmp}/v3k_keys"
+  if [ ! "$keys" -nt "$tools/v3k_keys.swift" ]; then # built to a temporary name: runs share it
+    if ! swiftc -O -o "$keys.$$" "$tools/v3k_keys.swift"; then
+      rm -f "$keys.$$"; echo "v3k_run: swiftc could not build the key injector; KEYS= needs it"; exit 1
+    fi
+    mv -f "$keys.$$" "$keys"
+  fi
+  cp "$KEYS" "$out/keys.txt"
+  kmap=(); [ -f "$cfg_src" ] && kmap=("$cfg_src")
+  "$keys" --check "$out/keys.txt" ${kmap[@]+"${kmap[@]}"} || { echo "v3k_run: KEYS=$KEYS refused"; exit 1; }
+fi
+
 pid=
 cap=
+keyp=
+keys_rc=
 lock="$data.lock"
+stop_keys() {
+  [ -n "$keyp" ] || return 0
+  if kill -0 "$keyp" 2>/dev/null; then
+    kill "$keyp" 2>/dev/null || true; wait "$keyp" 2>/dev/null || true; keys_rc=stopped
+  else
+    keys_rc=0; wait "$keyp" 2>/dev/null || keys_rc=$?
+  fi
+  keyp=
+}
 stop_vita3k() {
   [ -n "$cap" ] && { kill "$cap" 2>/dev/null || true; wait "$cap" 2>/dev/null || true; }
   cap=
+  stop_keys
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
     kill "$pid" 2>/dev/null || true
     for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
@@ -208,6 +242,24 @@ if [ -n "$winid" ]; then
   cap=$!
 fi
 log="$data/$HW_LOG"
+if [ -n "$keys" ]; then
+  # only this run's Vita3K: the PID started above, once its arguments show the VPK (another session's Vita3K runs
+  # another VPK, or the same one under another PID)
+  kpid=
+  for _ in $(seq 1 50); do
+    kill -0 "$pid" 2>/dev/null || break
+    case " $(ps -o command= -p "$pid" 2>/dev/null) " in *" -w $vpk "*) kpid=$pid; break ;; esac
+    sleep 0.1
+  done
+  if [ -n "$kpid" ]; then
+    kmap=(); [ -f "$out/vita3k-config.yml" ] && kmap=("$out/vita3k-config.yml")
+    "$keys" "$kpid" "$out/keys.txt" "$log" ${kmap[@]+"${kmap[@]}"} > "$out/keys.log" 2>&1 &
+    keyp=$!
+  else
+    echo "v3k_run: warning: Vita3K (PID $pid) never showed -w $vpk: no keys sent" | tee "$out/keys.log"
+    keys_rc=1
+  fi
+fi
 result=timeout
 t=0
 while :; do
@@ -225,6 +277,7 @@ if [ "$result" = stop ]; then # let the game finish writing and exit by itself
 fi
 stop_vita3k
 cp "$data/config.txt" "$out/config.txt"
+mkdir -p "$(dirname "$out/$HW_LOG")" # HW_LOG may be in a folder of HW_DATA (log/game.log)
 cp "$log" "$out/$HW_LOG" 2>/dev/null || echo "v3k_run: no $HW_LOG"
 [ -d "$data/shots" ] && { cp "$data/shots/"*.png "$out/" 2>/dev/null || true; }
 [ -z "$HW_SAVE_DIR" ] || { rm -rf "${out:?}/$HW_SAVE_DIR"; cp -R "$data/$HW_SAVE_DIR" "$out/$HW_SAVE_DIR"; }
@@ -234,6 +287,10 @@ for name in ${HW_COLLECT[@]+"${HW_COLLECT[@]}"}; do
 done
 sha=$( (sha1sum "$vpk" 2>/dev/null || shasum "$vpk") | cut -d' ' -f1)
 printf 'result=%s\nseconds=%s\nvpk=%s\nvpk_sha1=%s\n' "$result" "$t" "$vpk" "$sha" > "$out/v3k-run.txt"
+if [ -n "$keys" ]; then
+  echo "keys=$keys_rc" >> "$out/v3k-run.txt"
+  [ "$keys_rc" = 0 ] || echo "v3k_run: warning: the key script did not play to its end (keys=$keys_rc, $out/keys.log)"
+fi
 echo "v3k_run: $result after ${t}s, $(ls "$out" | grep -c '\.png$' || true) pictures in $out"
 case $result in
   stop) exit 0 ;;

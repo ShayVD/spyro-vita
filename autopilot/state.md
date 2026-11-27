@@ -11,62 +11,34 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   "phase": 5,
   "workers": [
     {
-      "issue": 245,
-      "branch": "feat/245-wobble-fix-2d-hud-sprites-with-a-corner",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-245",
-      "started_at": "2026-11-26T22:47:15Z",
+      "issue": 175,
+      "branch": "feat/175-owner-decision-colima-s-sshfs-mount",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-175",
+      "started_at": "2026-11-27T03:45:41Z",
+      "files": [
+        "tools/tc",
+        "tools/host_checks.sh",
+        "tools/fast_render_ab.sh",
+        "tools/mixer_ab.sh",
+        "tools/native_draw_ab.sh",
+        "tools/pres_check_ab.sh",
+        "tools/step.sh",
+        "tools/gdb_run.sh",
+        "docs/host-build.md"
+      ],
+      "agent": "a5c39f9290a1b230e",
+      "reported": true
+    },
+    {
+      "issue": 296,
+      "branch": "refactor/296-vertex-cache-prepare-for-the-core-2",
+      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-296",
+      "started_at": "2026-11-27T05:04:36Z",
       "files": [
         "src/platform/common/vcache.c",
-        "src/platform/common/psx_vcache.h",
-        "src/game/order_table.c",
-        "src/game/present.c"
+        "src/platform/common/psx_vcache.h"
       ],
-      "agent": "a09c5c3709dd43103"
-    },
-    {
-      "issue": 271,
-      "branch": "perf/271-draw-distance-let-max-grow-where-the",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-271",
-      "started_at": "2026-11-27T01:06:50Z",
-      "files": [
-        "src/game/lod.c",
-        "src/game/lod.h",
-        "src/platform/vita/lod_time.c",
-        "docs/presentation.md"
-      ],
-      "agent": "adeea5a2e1b159678"
-    },
-    {
-      "issue": 282,
-      "branch": "perf/282-design-the-core-2-helper-for-the-vertex",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-282",
-      "started_at": "2026-11-27T01:07:00Z",
-      "files": [
-        "docs/vcache-core2.md",
-        "tests/vcache/"
-      ],
-      "agent": "add909816f646b64a"
-    },
-    {
-      "issue": 251,
-      "branch": "feat/251-the-vita-build-on-encore-s-platform",
-      "worktree": "/Users/shayvandam/Projects/spyro-vita-issue-251",
-      "started_at": "2026-11-27T01:07:09Z",
-      "files": [
-        "third_party/encore/",
-        "third_party/vita-port-kit/",
-        "src/platform/vita/CMakeLists.txt",
-        "cmake/platform_common.cmake",
-        "src/platform/vita/audio.c",
-        "src/platform/vita/picture.c",
-        "src/platform/vita/vblank.c",
-        "src/platform/vita/perfcount.c",
-        "src/platform/vita/pad.c",
-        "src/platform/common/cdimage.c",
-        "src/platform/common/menu_opts.c",
-        "src/platform/common/pbp.c"
-      ],
-      "agent": "aedc22d51c6092653"
+      "agent": "afde2755bd6a5d91f"
     }
   ],
   "last_good": "70affc8d0cb83b31a0288bed687d4fad6c4a365b",
@@ -245,6 +217,15 @@ committed on the `autopilot` branch. The JSON block is what the tools read
       "title": "Hardware A/B for #212 (dd_budget=auto vs 48 KB) on owner60/stone60-style 60 Hz 2x",
       "expected": "2x holds at 60 Hz where the frame has room, no FPS loss; owner-approved run only",
       "issue": 212
+    },
+    {
+      "title": "Hardware A/B for #271 (dd_free=1 vs 0): MAX grows over the 60 Hz budget where a draw writes no more than 1x",
+      "expected": "no more late vblanks per 300 with dd_free=1 in Artisans and Toasty, at x2.00 where 1x was held",
+      "issue": 271,
+      "needs": "hardware",
+      "status": "queued",
+      "target": "vita",
+      "ab": "owner60 and o-toasty pads in real time, MAX 400, dd_budget=auto; dd_free=1,0,0,1; late vblanks per 300 and the lod lines; needs #295 (the key) merged first; script runs/vita/issue-271-1/hw/hw-session-271.sh"
     }
   ],
   "owner_decisions": [
@@ -347,7 +328,14 @@ committed on the `autopilot` branch. The JSON block is what the tools read
   },
   "rounds_without_gain": 0,
   "hardware_pending": null,
-  "job": null,
+  "job": {
+    "kind": "gate",
+    "issue": 175,
+    "step": 1,
+    "pid": 0,
+    "out": "/Users/shayvandam/Projects/spyro-vita-issue-175.gate.log",
+    "started_at": "2026-11-27T05:12:47Z"
+  },
   "batch": null,
   "lanes": [
     5
@@ -617,3 +605,9 @@ continue.
 - 2026-11-26 11:15 UTC retro 8 (wrap-up): +3 entries, 0 bumped, 0 signatures, branch retro/spyro-vita-phase-8b (Encore draft PR #122); promotion issue #276; release PR #275 to main.
 - 2026-11-26T22:47Z shared 5, vita 8: round 13 opened on the owner's answers (#271, #272, #251, #175); filed #282 (#272 design) and #283-#288 (#251 steps 2-7); fixed Files/kb lines on #175 #219 #225 #245 #247 #251 #259 #271 #272; dispatched #245 (one worker: other sessions' crash and salsaas containers busy); env.sh re-copied from the kit template; config decisions_log set
 - 2026-11-27T01:07Z shared 5, vita 8: other sessions' containers idle; dispatched #271, #282, #251 beside #245 (in its final ctest). PR #290 (#279, session) took D266.
+- 2026-11-27T03:46Z shared 5, vita 8: #245, #251 (step 1; vita-port-kit removal filed as #294: the worker's apply was refused by the permission classifier), #282 reported; #245 gate rerun after build_dirs took logs/ and disc; #175 moved to phase-8 and dispatched.
+- 2026-11-27T03:53Z shared 5, vita 8: merged #245 (D269); #271 reported (key patch outside Files filed as #295: the worker's apply was refused by the permission classifier); gating #282, then #251, #271.
+- 2026-11-27T04:23Z shared 5, vita 8: merged #282 (D270); filed #296 (#272 step 1); gating #251.
+- 2026-11-27T04:53Z shared 5, vita 8: merged #251 step 1 (D271); #175 reported; gating #271 (then #175).
+- 2026-11-27T05:05Z shared 5, vita 8: dispatched #296 (#272 step 1; one worker: other sessions' containers busy); #271 in gate.
+- 2026-11-27T05:12Z shared 5, vita 8: merged #271 (D272; pictures change as intended, baseline rebuild due); hardware A/B for #271 queued (needs #295); gating #175.

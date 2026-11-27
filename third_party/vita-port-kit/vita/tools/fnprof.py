@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Rank a thread's functions from a Vita log's fnprof lines (vita/runtime/fnprof: vpk_fnprof_init / _dump in a build
+"""Rank a thread's functions from a Vita log's fnprof lines (targets/vita/runtime/fnprof: vpk_fnprof_init / _dump in a build
 whose game files have -finstrument-functions).
 
-  vita/tools/fnprof.py RUN/game.log --elf build/game.elf [--top 40] [--callers 3] [--units] [--prefix vpk-fnprof]
+  targets/vita/tools/fnprof.py RUN/game.log --elf build/game.elf [--top 40] [--callers 3] [--units] [--prefix vpk-fnprof]
 
 A sample is (where, site): `where` is the instrumented function just entered (then `site` is its call site) or the
 address the last instrumented call returned to. Time in callees that are not instrumented counts for `where`'s
